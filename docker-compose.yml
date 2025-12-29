@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: rootops-postgres
+    environment:
+      POSTGRES_USER: rootops
+      POSTGRES_PASSWORD: rootops
+      POSTGRES_DB: rootops
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - rootops-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rootops"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RootOps Intelligence Engine
+  rootops:
+    build: .
+    container_name: rootops
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://rootops:rootops@postgres:5432/rootops
+      - LOG_LEVEL=INFO
+      - ENABLE_BREAKING_CHANGE_DETECTION=true
+      - ENABLE_ANOMALY_DETECTION=true
+      - ENABLE_PERFORMANCE_PREDICTION=true
+      # GitHub Integration (for enriched commit analysis)
+      # - GITHUB_TOKEN=ghp_your_token_here
+      # - GITHUB_REPO=owner/repo
+      # Optional: Enable LLM enrichment
+      # - ENABLE_LLM_ENRICHMENT=true
+      # - CLAUDE_API_KEY=your-api-key-here
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - rootops-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  rootops-network:
+    driver: bridge

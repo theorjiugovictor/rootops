@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RootOps Intelligence Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            border-bottom: 1px solid #30363d;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            color: #58a6ff;
+            font-size: 2em;
+            font-weight: 600;
+        }
+        
+        .subtitle {
+            color: #8b949e;
+            margin-top: 8px;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 20px;
+        }
+        
+        .card h2 {
+            color: #58a6ff;
+            font-size: 1.1em;
+            font-weight: 600;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .stat {
+            font-size: 2.5em;
+            font-weight: 700;
+            color: #ffffff;
+            margin: 10px 0;
+        }
+        
+        .stat-label {
+            color: #8b949e;
+            font-size: 0.9em;
+        }
+        
+        .commit-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .commit-item {
+            border-left: 3px solid #30363d;
+            padding: 12px;
+            margin-bottom: 12px;
+            background: #0d1117;
+            border-radius: 3px;
+        }
+        
+        .commit-item.high-risk {
+            border-left-color: #f85149;
+        }
+        
+        .commit-item.medium-risk {
+            border-left-color: #d29922;
+        }
+        
+        .commit-item.low-risk {
+            border-left-color: #3fb950;
+        }
+        
+        .commit-sha {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            color: #58a6ff;
+            font-size: 0.9em;
+        }
+        
+        .commit-message {
+            margin: 8px 0;
+            font-weight: 500;
+        }
+        
+        .commit-meta {
+            color: #8b949e;
+            font-size: 0.85em;
+        }
+        
+        .risk-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        
+        .risk-high {
+            background: rgba(248, 81, 73, 0.1);
+            color: #f85149;
+        }
+        
+        .risk-medium {
+            background: rgba(210, 153, 34, 0.1);
+            color: #d29922;
+        }
+        
+        .risk-low {
+            background: rgba(63, 185, 80, 0.1);
+            color: #3fb950;
+        }
+        
+        .alert {
+            background: rgba(248, 81, 73, 0.1);
+            border: 1px solid #f85149;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .alert-title {
+            color: #f85149;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #8b949e;
+            padding: 40px;
+        }
+        
+        .refresh-info {
+            color: #8b949e;
+            font-size: 0.85em;
+            text-align: right;
+            margin-top: 20px;
+        }
+        
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #0d1117;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #30363d;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #484f58;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RootOps Intelligence Dashboard</h1>
+            <p class="subtitle">Continuous deployment intelligence powered by GitHub, logs, and machine learning</p>
+        </header>
+        
+        <div id="alerts"></div>
+        
+        <div class="grid">
+            <div class="card">
+                <h2>Active Monitoring</h2>
+                <div class="stat" id="activeDeployments">-</div>
+                <div class="stat-label">Deployments Being Monitored</div>
+            </div>
+            
+            <div class="card">
+                <h2>Incident Probability</h2>
+                <div class="stat" id="avgIncidentProb">-</div>
+                <div class="stat-label">Average for Recent Commits</div>
+            </div>
+            
+            <div class="card">
+                <h2>Total Insights</h2>
+                <div class="stat" id="totalInsights">-</div>
+                <div class="stat-label">Commits Analyzed</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>Recent Commits</h2>
+            <div id="recentCommits" class="commit-list">
+                <div class="loading">Loading commits...</div>
+            </div>
+        </div>
+        
+        <div class="refresh-info">
+            Auto-refreshes every 30 seconds | Last updated: <span id="lastUpdate">-</span>
+        </div>
+    </div>
+    
+    <script>
+        let refreshInterval;
+        
+        async function fetchDashboardData() {
+            try {
+                const response = await fetch('/api/dashboard/overview');
+                const data = await response.json();
+                
+                // Update stats
+                document.getElementById('activeDeployments').textContent = data.active_deployments || 0;
+                document.getElementById('avgIncidentProb').textContent = 
+                    data.avg_incident_probability 
+                        ? (data.avg_incident_probability * 100).toFixed(1) + '%'
+                        : 'N/A';
+                document.getElementById('totalInsights').textContent = data.total_insights || 0;
+                
+                // Update alerts
+                const alertsDiv = document.getElementById('alerts');
+                if (data.high_risk_commits && data.high_risk_commits.length > 0) {
+                    alertsDiv.innerHTML = `
+                        <div class="alert">
+                            <div class="alert-title">High Risk Commits Detected</div>
+                            <div>${data.high_risk_commits.length} commit(s) have high incident probability. Review recommended.</div>
+                        </div>
+                    `;
+                } else {
+                    alertsDiv.innerHTML = '';
+                }
+                
+                // Update commits
+                const commitsDiv = document.getElementById('recentCommits');
+                if (data.recent_commits && data.recent_commits.length > 0) {
+                    commitsDiv.innerHTML = data.recent_commits.map(commit => {
+                        const riskLevel = getRiskLevel(commit.risk_score);
+                        const probability = (commit.incident_probability * 100).toFixed(1);
+                        
+                        return `
+                            <div class="commit-item ${riskLevel}-risk">
+                                <div>
+                                    <span class="commit-sha">${commit.commit_sha.substring(0, 8)}</span>
+                                    <span class="risk-badge risk-${riskLevel}">${probability}% incident probability</span>
+                                </div>
+                                <div class="commit-message">${escapeHtml(commit.message || 'No message')}</div>
+                                <div class="commit-meta">
+                                    Risk Score: ${commit.risk_score.toFixed(1)} | 
+                                    Action: ${commit.action} | 
+                                    ${new Date(commit.analyzed_at).toLocaleString()}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    commitsDiv.innerHTML = '<div class="loading">No commits analyzed yet. Background workers are collecting data...</div>';
+                }
+                
+                // Update last refresh time
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+                
+            } catch (error) {
+                console.error('Failed to fetch dashboard data:', error);
+                document.getElementById('recentCommits').innerHTML = 
+                    '<div class="loading">Error loading data. Check API server.</div>';
+            }
+        }
+        
+        function getRiskLevel(score) {
+            if (score >= 70) return 'high';
+            if (score >= 40) return 'medium';
+            return 'low';
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Initial load
+        fetchDashboardData();
+        
+        // Auto-refresh every 30 seconds
+        refreshInterval = setInterval(fetchDashboardData, 30000);
+    </script>
+</body>
+</html>

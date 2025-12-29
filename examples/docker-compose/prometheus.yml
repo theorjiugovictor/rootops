@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Scrape RootOps metrics
+  - job_name: 'rootops'
+    static_configs:
+      - targets: ['rootops:8000']
+    metrics_path: '/metrics'
+
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Add your application metrics here
+  - job_name: 'my-app'
+    static_configs:
+      - targets: ['my-app:8080']
