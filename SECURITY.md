@@ -1,7 +1,7 @@
 # Security Policy
 
 ## Reporting a Vulnerability
-Please email security@rootops.io with details. We will respond within 72 hours.
+Please report vulnerabilities by opening a security advisory on GitHub or emailing the maintainer. We will respond within 72 hours.
 
 ## Supported Versions
 We support the latest minor release.

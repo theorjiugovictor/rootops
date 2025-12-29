@@ -2,13 +2,14 @@
 
 <div align="center">
 
-![RootOps Logo](https://via.placeholder.com/200x200.png?text=RootOps)
+<!-- Add your logo at .github/logo.png or replace URL below -->
+![RootOps Logo](.github/logo.png)
 
 **AI-Powered DevOps Intelligence Platform**
 
-[![Docker Pulls](https://img.shields.io/docker/pulls/rootops/rootops)](https://hub.docker.com/r/rootops/rootops)
+[![Docker Pulls](https://img.shields.io/docker/pulls/theorjiugovictor/rootops)](https://hub.docker.com/r/theorjiugovictor/rootops)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![GitHub Stars](https://img.shields.io/github/stars/yourusername/rootops)](https://github.com/yourusername/rootops)
+[![GitHub Stars](https://img.shields.io/github/stars/theorjiugovictor/rootops)](https://github.com/theorjiugovictor/rootops)
 
 *Predictive insights for your DevOps pipeline - not reactive responses*
 
@@ -175,9 +176,9 @@ curl -X POST http://localhost:8000/api/v1/intelligence/deployment \
     "likely_failure_mode": "Authentication/Authorization failure"
   },
   "recommendations": [
-    "⚠️ Use staged/canary rollout",
-    "🔐 Enable verbose auth logging before deploy",
-    "📚 3 similar incidents in past 90 days - review history"
+    "Use staged/canary rollout",
+    "Enable verbose auth logging before deploy",
+    "3 similar incidents in past 90 days - review history"
   ],
   "action": "STAGED_ROLLOUT",
   "monitoring": {
@@ -415,7 +416,7 @@ See [`.env.example`](.env.example) for all options.
          └──────────────────┘
 ```
 
-## 📚 Documentation
+## Documentation
 
 - [Quick Start Guide](docs/quickstart.md)
 - [API Reference](docs/api-reference.md)
