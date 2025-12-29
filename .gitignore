@@ -48,6 +48,7 @@ models/*.joblib
 # Logs
 *.log
 logs/
+!src/integrations/logs/
 
 # Database
 *.db
