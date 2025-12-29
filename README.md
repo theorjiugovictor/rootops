@@ -69,7 +69,7 @@ Auto-detects available backends on startup. No configuration required.
 ### Option 1: Interactive Script (Easiest)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yourorg/rootops/main/quickstart.sh | bash
+curl -fsSL https://raw.githubusercontent.com/theorjiugovictor/rootops/main/quickstart.sh | bash
 ```
 
 Or download and run:
@@ -91,7 +91,7 @@ The script will:
 docker run -p 8000:8000 \
   -e GITHUB_TOKEN=your_token \
   -e GITHUB_REPO=owner/repo \
-  rootops/rootops
+  theorjiugovictor/rootops
 
 # Open dashboard
 open http://localhost:8000/dashboard
@@ -443,7 +443,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/rootops.git
+git clone https://github.com/theorjiugovictor/rootops.git
 cd rootops
 
 # Create virtual environment (requires Python 3.11 or 3.12)
@@ -487,7 +487,7 @@ RootOps is open source software licensed under the [MIT License](LICENSE).
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/rootops&type=Date)](https://star-history.com/#yourusername/rootops&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=theorjiugovictor/rootops&type=Date)](https://star-history.com/#theorjiugovictor/rootops&Date)
 
 ## Community
 
@@ -501,6 +501,6 @@ RootOps is open source software licensed under the [MIT License](LICENSE).
 
 **Built by the RootOps community**
 
-[Website](https://rootops.io) • [Documentation](https://docs.rootops.io) • [Blog](https://blog.rootops.io)
+[GitHub](https://github.com/theorjiugovictor/rootops)
 
 </div>
