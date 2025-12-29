@@ -2,8 +2,7 @@
 
 <div align="center">
 
-<!-- Add your logo at .github/logo.png or replace URL below -->
-![RootOps Logo](.github/logo.png)
+<img src=".github/logo.png" alt="RootOps Logo" width="200"/>
 
 **AI-Powered DevOps Intelligence Platform**
 
