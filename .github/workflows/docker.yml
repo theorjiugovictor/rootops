@@ -27,9 +27,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract version
-        id: vars
-        run: echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+      - name: Extract version from code
+        id: app_version
+        run: |
+          VERSION=$(grep 'VERSION: str =' src/config.py | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "DETECTED_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -39,4 +42,4 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/rootops:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/rootops:${{ steps.vars.outputs.version }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/rootops:${{ env.DETECTED_VERSION }}

@@ -26,12 +26,12 @@ RootOps is a **zero-configuration intelligence engine** that analyzes your softw
 
 ### Key Capabilities
 
-*   **🧠 Hybrid Intelligence**: Combines **XGBoost** (Machine Learning) with **Gemini 1.5** (Semantic AI) for deep risk analysis.
-*   **🔮 Predictive Risk**: Forecasts deployment success 80% more accurately than heuristic scanners.
-*   **🕵️ Anomaly Detection**: Uses **Isolation Forests** to detect log anomalies and error spikes automatically.
-*   **⚡ Performance Forecasting**: Predicts latency impact of code changes before they hit production.
-*   **🏠 Local & Private**: Works completely offline with your local git repo. Your data stays yours.
-*   **🚀 Zero Config**: Auto-detects Loki, Prometheus, and Postgres. Starts working in seconds.
+*   **Hybrid Intelligence**: Combines **XGBoost** (Machine Learning) with **Gemini 1.5** (Semantic AI) for deep risk analysis.
+*   **Predictive Risk**: Forecasts deployment success 80% more accurately than heuristic scanners.
+*   **Anomaly Detection**: Uses **Isolation Forests** to detect log anomalies and error spikes automatically.
+*   **Performance Forecasting**: Predicts latency impact of code changes before they hit production.
+*   **Local & Private**: Works completely offline with your local git repo. Your data stays yours.
+*   **Zero Config**: Auto-detects Loki, Prometheus, and Postgres. Starts working in seconds.
 
 ## Quick Start
 
