@@ -21,6 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.services.github_enrichment import GitHubEnrichmentService
 from src.services.log_analyzer import LogAnalyzer
 from src.services.trace_analyzer import TraceAnalyzer
+from src.services.llm_client import enrich_commit_analysis
+from src.services.git_local_service import GitLocalService
+from src.config import settings
 from src.models.db_models import (
     CommitMemory, 
     IncidentMemory, 
@@ -55,6 +58,22 @@ class IntelligenceEngine:
         self.github = github_service
         self.log_analyzer = log_analyzer
         self.trace_analyzer = trace_analyzer
+        self.trace_analyzer = trace_analyzer
+        
+        try:
+            from src.services.ml_predictor import MLPredictor
+            from src.services.anomaly_detector import AnomalyDetector
+            from src.services.performance_predictor import PerformancePredictor
+            
+            self.ml_predictor = MLPredictor()
+            self.anomaly_detector = AnomalyDetector()
+            self.performance_predictor = PerformancePredictor()
+        except Exception as e:
+            logger.error(f"Failed to init ML services: {e}")
+            self.ml_predictor = None
+            self.anomaly_detector = None
+            self.performance_predictor = None
+
         self.learning_enabled = True
         logger.info("Intelligence Engine initialized - memory system active")
     
@@ -76,11 +95,13 @@ class IntelligenceEngine:
         """
         logger.info(f"Intelligence Engine analyzing deployment: {commit_sha[:8]}")
         
-        # Step 1: Gather all signals in parallel
-        commit_data, system_state, historical_context = await asyncio.gather(
-            self._analyze_commit(commit_sha),
+        # Step 1: Analyze commit first to get changed files
+        commit_data = await self._analyze_commit(commit_sha)
+        
+        # Step 2: Gather other signals with file context
+        system_state, historical_context = await asyncio.gather(
             self._get_system_state(),
-            self._recall_similar_situations(commit_sha)
+            self._recall_similar_situations(commit_sha, commit_data.get("files", []))
         )
         
         # Step 2: Build comprehensive context
@@ -134,11 +155,23 @@ class IntelligenceEngine:
         }
     
     async def _analyze_commit(self, commit_sha: str) -> Dict:
-        """Analyze commit with GitHub enrichment."""
+        """
+        Analyze commit with GitHub enrichment or Local Git fallback.
+        Now includes 'files' list for file-based history learning.
+        """
         github_data = await self.github.get_commit_details(commit_sha)
         
+        if not github_data:
+            # Fallback to local git
+            try:
+                from src.services.git_local_service import GitLocalService
+                local_git = GitLocalService()
+                github_data = local_git.get_commit_details(commit_sha)
+            except Exception as e:
+                logger.warning(f"Local git fallback failed: {e}")
+        
         if github_data:
-            return {
+            result = {
                 "sha": github_data.sha,
                 "author": github_data.author,
                 "email": github_data.email,
@@ -151,10 +184,33 @@ class IntelligenceEngine:
                 "test_ratio": github_data.test_ratio,
                 "commit_type": github_data.commit_type,
                 "risky_patterns": self.github.extract_risky_patterns(github_data.files),
-                "timestamp": github_data.timestamp
+                "timestamp": github_data.timestamp,
+                "files": [f["filename"] for f in github_data.files] # Keep list of filenames
             }
+            
+            # LLM Enrichment
+            if settings.ENABLE_LLM_ENRICHMENT and settings.GEMINI_API_KEY:
+                try:
+                    # Get diff from local git (fastest way)
+                    local_git = GitLocalService()
+                    diff = local_git.get_commit_diff(commit_sha)
+                    
+                    if diff:
+                        llm_insights = await enrich_commit_analysis(diff)
+                        if llm_insights:
+                            result["llm_analysis"] = llm_insights
+                            # Adjust risk score based on LLM
+                            result["risk_score"] = (result["risk_score"] + float(llm_insights.get("risk_score", 5))) / 2
+                except Exception as e:
+                    logger.warning(f"LLM enrichment failed during analysis: {e}")
+            
+            return result
         
-        return {"sha": commit_sha, "risk_score": 5.0}
+        return {
+            "sha": commit_sha, 
+            "risk_score": 5.0, 
+            "files": [] 
+        }
     
     async def _get_system_state(self) -> Dict:
         """Get current system health metrics including logs and traces."""
@@ -178,7 +234,18 @@ class IntelligenceEngine:
                 system_state["recent_errors"] = log_analysis.get("error_count", 0)
                 system_state["log_anomalies"] = log_analysis.get("anomalies", [])
                 
-                # Adjust health score based on log health
+                # New: Use ML Anomaly Detector
+                if self.anomaly_detector:
+                     detector_result = self.anomaly_detector.detect(log_analysis)
+                     if detector_result["is_anomaly"]:
+                         system_state["log_anomalies"].append({
+                             "type": "ml_anomaly",
+                             "severity": detector_result["severity"],
+                             "message": f"Unusual log patterns detected (Score: {detector_result['score']:.2f})"
+                         })
+                         system_state["health_score"] -= 0.4 if detector_result["severity"] == "CRITICAL" else 0.2
+                
+                # Adjust health score based on log health (fallback/additional)
                 if log_analysis.get("spike_score", 0) > 0.5:
                     system_state["health_score"] -= 0.3
         except Exception as e:
@@ -201,13 +268,19 @@ class IntelligenceEngine:
         # This will be populated when LOKI_URL is configured
         return []
     
-    async def _recall_similar_situations(self, commit_sha: str) -> Dict:
+    async def _recall_similar_situations(self, commit_sha: str, files: List[str] = None) -> Dict:
         """
         Query memory database for similar past situations.
         This is where continuous learning happens.
         """
+        if files is None:
+            files = []
+            
         # Find similar commits that led to incidents
         similar_incidents = await self._find_similar_incidents()
+        
+        # Find incidents involving the same files
+        file_incidents = await self._find_file_incidents(files)
         
         # Find learned patterns
         pattern_matches = await self._find_matching_patterns()
@@ -220,11 +293,51 @@ class IntelligenceEngine:
         
         return {
             "similar_incidents": similar_incidents,
+            "file_incidents": file_incidents,
             "pattern_matches": pattern_matches,
             "author_stats": author_stats,
             "time_patterns": time_patterns,
             "total_memories": await self._count_total_memories()
         }
+    
+    async def _find_file_incidents(self, files: List[str]) -> List[Dict]:
+        """Find past incidents involving any of the modified files."""
+        if not files:
+            return []
+            
+        # This is the "Specific Memory" look up
+        # We look for incidents where the root cause commit modified any of these files
+        
+        # 1. Get recent incidents with root cause commits
+        # Note: We join with CommitMemory to check the files list
+        result = await self.db.execute(
+            select(IncidentMemory, CommitMemory)
+            .join(CommitMemory, IncidentMemory.root_cause_commit == CommitMemory.sha)
+            .order_by(IncidentMemory.occurred_at.desc())
+            .limit(50) 
+        )
+        
+        file_incidents = []
+        # Result rows are tuples (IncidentMemory, CommitMemory)
+        rows = result.all()
+        
+        for incident, commit in rows:
+            # commit.files is now a JSON list of filenames
+            commit_files = commit.files if commit.files else []
+            
+            # Check for intersection
+            common_files = set(files).intersection(set(commit_files))
+            
+            if common_files:
+                file_incidents.append({
+                    "incident_id": incident.incident_id,
+                    "severity": incident.severity,
+                    "involved_files": list(common_files),
+                    "description": incident.description,
+                    "occurred_at": incident.occurred_at.isoformat()
+                })
+        
+        return file_incidents
     
     async def _find_similar_incidents(self) -> List[Dict]:
         """Find incidents with similar characteristics."""
@@ -306,48 +419,61 @@ class IntelligenceEngine:
     
     async def _predict_outcome(self, context: Dict) -> Dict:
         """
-        Predict deployment outcome based on learned patterns.
-        
-        This uses:
-        1. Commit characteristics
-        2. Historical similar situations
-        3. Current system state
-        4. Time-based patterns
+        Predict deployment outcome based on learned patterns and ML models.
         """
         commit = context["commit"]
         system = context["system_state"]
         memory = context["memory"]
         
-        # Base probability from commit risk
+        # 1. Calculate Rule-Based Probability
         base_risk = commit.get("risk_score", 5.0) / 10
-        
-        # Adjust based on system state
         system_factor = 1.0 - system.get("health_score", 1.0)
-        
-        # Adjust based on historical patterns
         historical_factor = len(memory.get("similar_incidents", [])) * 0.1
-        
-        # Adjust based on author history
+        file_risk_factor = min(len(memory.get("file_incidents", [])) * 0.3, 0.6)
         author_factor = memory.get("author_stats", {}).get("incident_rate", 0.0)
-        
-        # Temporal adjustment
         time_factor = 0.2 if memory["time_patterns"].get("is_off_hours") else 0.0
         
-        # Combined probability
-        probability = min(
-            base_risk + system_factor + historical_factor + author_factor + time_factor,
+        rule_prob = min(
+            base_risk + system_factor + historical_factor + file_risk_factor + author_factor + time_factor,
             1.0
         )
         
-        # Confidence based on available data
-        confidence = self._calculate_confidence(memory)
+        # 2. Calculate ML Probability (if available)
+        ml_prob = -1.0
+        if self.ml_predictor and self.ml_predictor.is_trained:
+            try:
+                features = self.ml_predictor.prepare_features(
+                    commit, system, datetime.utcnow()
+                )
+                ml_prob = self.ml_predictor.predict_risk(features)
+                logger.info(f"ML Prediction: {ml_prob}, Rule Prediction: {rule_prob}")
+            except Exception as e:
+                logger.error(f"ML prediction failed: {e}")
+
+        # 3. Combine Probabilities
+        if ml_prob >= 0:
+            # Weighted average: 70% ML, 30% Rules
+            final_prob = (ml_prob * 0.7) + (rule_prob * 0.3)
+        else:
+            final_prob = rule_prob
         
+        confidence = self._calculate_confidence(memory)
+        if ml_prob >= 0:
+            confidence = min(confidence + 0.2, 0.99)
+            
+        # 4. Predict Performance Impact (Latency)
+        predicted_latency = 0.0
+        if self.performance_predictor:
+            perf_features = self.performance_predictor.prepare_features(commit, system)
+            predicted_latency = self.performance_predictor.predict_latency(perf_features)
+
         return {
-            "probability": probability,
+            "probability": final_prob,
             "confidence": confidence,
             "expected_impact": self._estimate_impact(commit, memory),
             "time_to_incident": self._estimate_time_to_incident(memory),
-            "failure_mode": self._predict_failure_mode(commit, memory)
+            "failure_mode": self._predict_failure_mode(commit, memory),
+            "predicted_p95_latency": predicted_latency if predicted_latency > 0 else None
         }
     
     def _calculate_confidence(self, memory: Dict) -> float:
@@ -421,40 +547,52 @@ class IntelligenceEngine:
         prob = prediction["probability"]
         
         # Risk-based recommendations
+        # Risk-based recommendations
         if prob >= 0.8:
-            recommendations.append("⛔ BLOCK DEPLOYMENT - High incident probability")
+            recommendations.append("BLOCK DEPLOYMENT - High incident probability")
         elif prob >= 0.6:
-            recommendations.append("⚠️  Use staged/canary rollout")
+            recommendations.append("Use staged/canary rollout")
         elif prob >= 0.4:
-            recommendations.append("📊 Deploy with enhanced monitoring")
+            recommendations.append("Deploy with enhanced monitoring")
         
         # Pattern-based recommendations
         if "auth_logic" in commit.get("risky_patterns", []):
-            recommendations.append("🔐 Enable verbose auth logging before deploy")
+            recommendations.append("Enable verbose auth logging before deploy")
         
         if "db_migration" in commit.get("risky_patterns", []):
-            recommendations.append("💾 Test migration on staging with production data volume")
+            recommendations.append("Test migration on staging with production data volume")
         
         # Test coverage
         if commit.get("test_ratio", 1.0) < 0.2:
-            recommendations.append("🧪 Low test coverage - add integration tests")
+            recommendations.append("Low test coverage - add integration tests")
         
         # Temporal recommendations
         if memory["time_patterns"].get("is_off_hours"):
-            recommendations.append("🌙 Off-hours deploy - ensure on-call coverage")
+            recommendations.append("Off-hours deploy - ensure on-call coverage")
         
         if memory["time_patterns"].get("is_weekend"):
-            recommendations.append("📅 Weekend deploy - consider waiting for Monday")
+            recommendations.append("Weekend deploy - consider waiting for Monday")
         
         # System state
         if context["system_state"].get("error_rate", 0) > 0.05:
-            recommendations.append("🚨 System already has elevated errors - stabilize first")
+            recommendations.append("System already has elevated errors - stabilize first")
         
         # Historical learning
         similar_incidents = memory.get("similar_incidents", [])
         if similar_incidents:
             recommendations.append(
-                f"📚 {len(similar_incidents)} similar incidents in past 90 days - review history"
+                f"{len(similar_incidents)} similar incidents in past 90 days - review history"
+            )
+            
+        # Specific file warnings
+        file_incidents = memory.get("file_incidents", [])
+        if file_incidents:
+            files_involved = set()
+            for inc in file_incidents:
+                files_involved.update(inc["involved_files"])
+            
+            recommendations.append(
+                f"HIGH RISK: Files {list(files_involved)} have caused {len(file_incidents)} recent incidents"
             )
         
         return recommendations
@@ -552,6 +690,8 @@ class IntelligenceEngine:
             test_ratio=commit_data.get("test_ratio", 0),
             commit_type=commit_data.get("commit_type"),
             risky_patterns=commit_data.get("risky_patterns", []),
+            files=commit_data.get("files", []),
+            prediction_details=prediction,
             committed_at=commit_data.get("timestamp", datetime.utcnow())
         )
         

@@ -67,7 +67,8 @@ RootOps is built as a microservices-oriented application with clear separation o
 
 **Responsibility:** Business logic and analysis
 
-- **CommitAnalyzer** - Git commit analysis
+- **CommitAnalyzer** - Git commit analysis (Local + GitHub)
+- **GitLocalService** - Direct analysis of local git repository
 - **LogAnalyzer** - Log aggregation and anomaly detection
 - **TraceAnalyzer** - Distributed trace analysis
 - **Optimizer** - Recommendation generation
@@ -78,7 +79,8 @@ Each service is independent and can be tested in isolation.
 
 **Responsibility:** Machine learning and data models
 
-- **predictions.py** - ML models (RandomForest, XGBoost, IsolationForest)
+- **MLPredictor** - Real Scikit-Learn RandomForest model
+- **predictions.py** - Heuristic models & ML interfaces
 - **db_models.py** - SQLAlchemy database models
 - **requests.py** - Pydantic request/response schemas
 
@@ -103,7 +105,7 @@ Each service is independent and can be tested in isolation.
    ↓
 4. BreakingChangeDetector predicts risk
    ↓
-5. Optional: LLM enrichment (Claude API)
+5. Optional: LLM enrichment (Gemini API)
    ↓
 6. Result stored in PostgreSQL
    ↓

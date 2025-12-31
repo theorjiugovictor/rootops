@@ -39,6 +39,7 @@ class CommitMemory(Base):
     author = Column(String, index=True)
     author_email = Column(String, index=True)
     files_changed = Column(Integer)
+    files = Column(JSON)  # List of filenames modified
     lines_added = Column(Integer)
     lines_deleted = Column(Integer)
     risk_score = Column(Float, index=True)
@@ -47,6 +48,7 @@ class CommitMemory(Base):
     test_ratio = Column(Float)
     commit_type = Column(String, index=True)  # bugfix, feature, refactor, etc
     risky_patterns = Column(JSON)  # List of detected patterns
+    prediction_details = Column(JSON) # Detailed ML predictions (e.g. latency)
     committed_at = Column(DateTime(timezone=True), index=True)
     analyzed_at = Column(DateTime(timezone=True), server_default=func.now())
 

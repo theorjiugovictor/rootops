@@ -64,11 +64,11 @@ class Settings(BaseSettings):
     LOCAL_LLM_URL: Optional[str] = None  # For local LLM mode
     ANONYMIZE_AUTHORS: bool = False  # Hash author names for privacy
     
-    # LLM Configuration (Optional - for semantic analysis)
-    CLAUDE_API_KEY: Optional[str] = None
-    CLAUDE_MODEL: str = "claude-sonnet-4-20250514"
-    CLAUDE_MAX_TOKENS: int = 4096
-    CLAUDE_API_BASE: Optional[str] = None
+    # LLM Configuration (Generic)
+    LLM_API_KEY: Optional[str] = None
+    LLM_PROVIDER: str = "gemini"  # gemini | openai | anthropic
+    LLM_MODEL: str = "gemini-1.5-flash"
+    LLM_MAX_TOKENS: int = 4096
     
     # Advanced Options
     ALLOW_DB_INIT_FAILURE: bool = False

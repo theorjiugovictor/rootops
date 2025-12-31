@@ -9,7 +9,7 @@ from sqlalchemy import select, func
 from datetime import datetime, timedelta
 
 from src.database import get_db
-from src.models.db_models import CommitMemory, DeploymentEvent
+from src.models.db_models import CommitMemory, DeploymentEvent, LogAnalysis
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -55,8 +55,21 @@ async def get_dashboard_overview(db: AsyncSession = Depends(get_db)):
     total_insights_result = await db.execute(
         select(func.count(CommitMemory.id))
     )
-    total_insights = total_insights_result.scalar() or 0
     
+    # Get latest System Health (Log Analysis)
+    latest_logs_result = await db.execute(
+        select(LogAnalysis)
+        .order_by(LogAnalysis.created_at.desc())
+        .limit(1)
+    )
+    latest_logs = latest_logs_result.scalar_one_or_none()
+    
+    system_health = {
+        "log_anomalies": latest_logs.anomalies if latest_logs else [],
+        "error_rate": latest_logs.error_count / latest_logs.log_count if latest_logs and latest_logs.log_count > 0 else 0,
+        "last_checked": latest_logs.created_at.isoformat() if latest_logs else None
+    }
+
     # Find high-risk commits (>70% incident probability)
     high_risk = [
         {
@@ -77,7 +90,11 @@ async def get_dashboard_overview(db: AsyncSession = Depends(get_db)):
             "risk_score": c.risk_score,
             "incident_probability": c.incident_probability,
             "action": c.recommended_action,
-            "analyzed_at": c.analyzed_at.isoformat()
+            "analyzed_at": c.analyzed_at.isoformat(),
+            "prediction": c.prediction_details,
+            "analysis": {
+                "files": c.files
+            }
         }
         for c in recent_commits[:20]
     ]
@@ -87,7 +104,8 @@ async def get_dashboard_overview(db: AsyncSession = Depends(get_db)):
         "avg_incident_probability": round(avg_prob, 3),
         "total_insights": total_insights,
         "high_risk_commits": high_risk,
-        "recent_commits": commits_display
+        "recent_commits": commits_display,
+        "system_health": system_health
     }
 
 

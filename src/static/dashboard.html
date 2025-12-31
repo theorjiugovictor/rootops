@@ -214,6 +214,18 @@
                 <div class="stat" id="totalInsights">-</div>
                 <div class="stat-label">Commits Analyzed</div>
             </div>
+            
+            <div class="card">
+                <h2>Log Health</h2>
+                <div class="stat" id="anomalyScore">-</div>
+                <div class="stat-label" id="anomalyStatus">No Anomalies</div>
+            </div>
+
+            <div class="card">
+                <h2>Perf. Forecast</h2>
+                <div class="stat" id="p95Forecast">-</div>
+                <div class="stat-label">Predicted P95 Latency</div>
+            </div>
         </div>
         
         <div class="card">
@@ -243,6 +255,26 @@
                         ? (data.avg_incident_probability * 100).toFixed(1) + '%'
                         : 'N/A';
                 document.getElementById('totalInsights').textContent = data.total_insights || 0;
+                
+                // Update ML Stats
+                if (data.system_health) {
+                    const health = data.system_health;
+                    // Anomalies
+                    const anomalyCount = health.log_anomalies ? health.log_anomalies.length : 0;
+                    document.getElementById('anomalyScore').textContent = anomalyCount;
+                    document.getElementById('anomalyStatus').textContent = anomalyCount > 0 ? "Anomalies Detected" : "System Normal";
+                    document.getElementById('anomalyScore').style.color = anomalyCount > 0 ? "#f85149" : "#3fb950";
+                }
+                
+                // Performance Forecast (from latest commit)
+                if (data.recent_commits && data.recent_commits.length > 0) {
+                     const latest = data.recent_commits[0];
+                     if (latest.prediction && latest.prediction.predicted_p95_latency) {
+                         document.getElementById('p95Forecast').textContent = latest.prediction.predicted_p95_latency.toFixed(0) + 'ms';
+                     } else {
+                         document.getElementById('p95Forecast').textContent = '--';
+                     }
+                }
                 
                 // Update alerts
                 const alertsDiv = document.getElementById('alerts');
@@ -276,6 +308,12 @@
                                     Action: ${commit.action} | 
                                     ${new Date(commit.analyzed_at).toLocaleString()}
                                 </div>
+                                ${commit.analysis && commit.analysis.files && commit.analysis.files.length > 0 ? 
+                                  `<div style="margin-top:8px; font-size:0.8em; color:#8b949e;">
+                                     <strong>Changed Files:</strong> ${commit.analysis.files.slice(0, 3).join(', ')} 
+                                     ${commit.analysis.files.length > 3 ? `+${commit.analysis.files.length - 3} more` : ''}
+                                   </div>` : ''}
+                            </div>
                             </div>
                         `;
                     }).join('');
