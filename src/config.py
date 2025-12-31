@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     
     # Service Info
     SERVICE_NAME: str = "RootOps Intelligence Engine"
-    VERSION: str = "1.0.4"
+    VERSION: str = "1.0.5"
     
     # Database Configuration
     DATABASE_URL: str = "postgresql://rootops:rootops@postgres:5432/rootops"
