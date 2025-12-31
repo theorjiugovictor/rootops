@@ -13,10 +13,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Convert postgresql:// to postgresql+asyncpg://
-ASYNC_DATABASE_URL = settings.DATABASE_URL.replace(
-    "postgresql://",
-    "postgresql+asyncpg://"
-)
+if "sqlite" in settings.DATABASE_URL:
+    ASYNC_DATABASE_URL = settings.DATABASE_URL.replace("sqlite://", "sqlite+aiosqlite://")
+else:
+    ASYNC_DATABASE_URL = settings.DATABASE_URL.replace(
+        "postgresql://",
+        "postgresql+asyncpg://"
+    )
 
 # Async engine for application
 async_engine = create_async_engine(

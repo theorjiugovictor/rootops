@@ -46,8 +46,12 @@ async def get_dashboard_overview(db: AsyncSession = Depends(get_db)):
     recent_commits = recent_commits_result.scalars().all()
     
     # Calculate average incident probability
+    # Calculate average incident probability
     if recent_commits:
-        avg_prob = sum(c.incident_probability for c in recent_commits) / len(recent_commits)
+        avg_prob = sum(
+            (c.prediction_details.get("incident_probability", 0.0) if c.prediction_details else 0.0)
+            for c in recent_commits
+        ) / len(recent_commits)
     else:
         avg_prob = 0.0
     
@@ -55,6 +59,7 @@ async def get_dashboard_overview(db: AsyncSession = Depends(get_db)):
     total_insights_result = await db.execute(
         select(func.count(CommitMemory.id))
     )
+    total_insights = total_insights_result.scalar() or 0
     
     # Get latest System Health (Log Analysis)
     latest_logs_result = await db.execute(
@@ -73,23 +78,23 @@ async def get_dashboard_overview(db: AsyncSession = Depends(get_db)):
     # Find high-risk commits (>70% incident probability)
     high_risk = [
         {
-            "commit_sha": c.commit_sha,
-            "incident_probability": c.incident_probability,
+            "commit_sha": c.sha,
+            "incident_probability": c.prediction_details.get("incident_probability", 0.0) if c.prediction_details else 0.0,
             "risk_score": c.risk_score,
             "analyzed_at": c.analyzed_at.isoformat()
         }
         for c in recent_commits
-        if c.incident_probability >= 0.7
+        if (c.prediction_details and c.prediction_details.get("incident_probability", 0.0) >= 0.7)
     ]
     
     # Recent commits for display
     commits_display = [
         {
-            "commit_sha": c.commit_sha,
-            "message": c.message,
+            "commit_sha": c.sha,
+            "message": "Commit " + c.sha[:8], # Message not persisted
             "risk_score": c.risk_score,
-            "incident_probability": c.incident_probability,
-            "action": c.recommended_action,
+            "incident_probability": c.prediction_details.get("incident_probability", 0.0) if c.prediction_details else 0.0,
+            "action": c.prediction_details.get("recommended_action", "PROCEED") if c.prediction_details else "PROCEED",
             "analyzed_at": c.analyzed_at.isoformat(),
             "prediction": c.prediction_details,
             "analysis": {
@@ -122,17 +127,17 @@ async def get_commit_details(commit_sha: str, db: AsyncSession = Depends(get_db)
         return {"error": "Commit not found"}
     
     return {
-        "commit_sha": commit.commit_sha,
-        "message": commit.message,
+        "commit_sha": commit.sha,
+        "message": "Commit " + commit.sha[:8],
         "author": commit.author,
         "repository": commit.repository,
         "risk_score": commit.risk_score,
-        "incident_probability": commit.incident_probability,
+        "incident_probability": commit.prediction_details.get("incident_probability", 0.0) if commit.prediction_details else 0.0,
         "files_changed": commit.files_changed,
-        "additions": commit.additions,
-        "deletions": commit.deletions,
+        "additions": commit.lines_added,
+        "deletions": commit.lines_deleted,
         "risky_patterns": commit.risky_patterns,
-        "recommended_action": commit.recommended_action,
+        "recommended_action": commit.prediction_details.get("recommended_action", "PROCEED") if commit.prediction_details else "PROCEED",
         "analyzed_at": commit.analyzed_at.isoformat(),
         "committed_at": commit.committed_at.isoformat() if commit.committed_at else None
     }
@@ -157,11 +162,11 @@ async def get_recent_deployments(
             {
                 "deployment_id": d.deployment_id,
                 "commit_sha": d.commit_sha,
-                "environment": d.environment,
+                "environment": "production", # Default
                 "predicted_risk": d.predicted_risk,
                 "resulted_in_incident": d.resulted_in_incident,
                 "deployed_at": d.deployed_at.isoformat(),
-                "incident_detected_at": d.incident_detected_at.isoformat() if d.incident_detected_at else None
+                "incident_detected_at": None # Not in model
             }
             for d in deployments
         ]
