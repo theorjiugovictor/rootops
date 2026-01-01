@@ -99,7 +99,8 @@ class LLMClient:
             except (KeyError, IndexError): return None
 
     async def _call_openai(self, prompt: str) -> Optional[Dict]:
-        url = "https://api.openai.com/v1/chat/completions"
+        base_url = settings.LLM_BASE_URL or "https://api.openai.com/v1"
+        url = f"{base_url}/chat/completions"
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         payload = {
             "model": self.model or "gpt-4o",
@@ -138,7 +139,8 @@ class LLMClient:
             except Exception: return "Error parsing Gemini response"
 
     def _call_openai_sync(self, prompt: str) -> str:
-        url = "https://api.openai.com/v1/chat/completions"
+        base_url = settings.LLM_BASE_URL or "https://api.openai.com/v1"
+        url = f"{base_url}/chat/completions"
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         payload = {
             "model": self.model or "gpt-4o",

@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     
     # Service Info
     SERVICE_NAME: str = "RootOps Intelligence Engine"
-    VERSION: str = "1.0.12"
+    VERSION: str = "1.0.13"
     
     # Database Configuration
     DATABASE_URL: str = "postgresql://rootops:rootops@postgres:5432/rootops"
@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     
     # LLM Configuration (Generic)
     LLM_API_KEY: Optional[str] = None
+    LLM_BASE_URL: Optional[str] = None # For OpenRouter, LocalAI, etc.
     LLM_PROVIDER: str = "gemini"  # gemini | openai | anthropic
     LLM_MODEL: str = "gemini-pro"
     LLM_MAX_TOKENS: int = 4096
