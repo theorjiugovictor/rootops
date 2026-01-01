@@ -49,7 +49,7 @@ async def get_dashboard_overview(db: AsyncSession = Depends(get_db)):
     # Calculate average incident probability
     if recent_commits:
         avg_prob = sum(
-            (c.prediction_details.get("incident_probability", 0.0) if c.prediction_details else 0.0)
+            (c.prediction_details.get("probability", 0.0) if c.prediction_details else 0.0)
             for c in recent_commits
         ) / len(recent_commits)
     else:
@@ -79,12 +79,12 @@ async def get_dashboard_overview(db: AsyncSession = Depends(get_db)):
     high_risk = [
         {
             "commit_sha": c.sha,
-            "incident_probability": c.prediction_details.get("incident_probability", 0.0) if c.prediction_details else 0.0,
+            "incident_probability": c.prediction_details.get("probability", 0.0) if c.prediction_details else 0.0,
             "risk_score": c.risk_score,
             "analyzed_at": c.analyzed_at.isoformat()
         }
         for c in recent_commits
-        if (c.prediction_details and c.prediction_details.get("incident_probability", 0.0) >= 0.7)
+        if (c.prediction_details and c.prediction_details.get("probability", 0.0) >= 0.7)
     ]
     
     # Recent commits for display
@@ -93,7 +93,7 @@ async def get_dashboard_overview(db: AsyncSession = Depends(get_db)):
             "commit_sha": c.sha,
             "message": "Commit " + c.sha[:8], # Message not persisted
             "risk_score": c.risk_score,
-            "incident_probability": c.prediction_details.get("incident_probability", 0.0) if c.prediction_details else 0.0,
+            "incident_probability": c.prediction_details.get("probability", 0.0) if c.prediction_details else 0.0,
             "action": c.prediction_details.get("recommended_action", "PROCEED") if c.prediction_details else "PROCEED",
             "analyzed_at": c.analyzed_at.isoformat(),
             "prediction": c.prediction_details,
@@ -132,7 +132,7 @@ async def get_commit_details(commit_sha: str, db: AsyncSession = Depends(get_db)
         "author": commit.author,
         "repository": commit.repository,
         "risk_score": commit.risk_score,
-        "incident_probability": commit.prediction_details.get("incident_probability", 0.0) if commit.prediction_details else 0.0,
+        "incident_probability": commit.prediction_details.get("probability", 0.0) if commit.prediction_details else 0.0,
         "files_changed": commit.files_changed,
         "additions": commit.lines_added,
         "deletions": commit.lines_deleted,
