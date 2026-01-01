@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     
     # Service Info
     SERVICE_NAME: str = "RootOps Intelligence Engine"
-    VERSION: str = "1.0.11"
+    VERSION: str = "1.0.12"
     
     # Database Configuration
     DATABASE_URL: str = "postgresql://rootops:rootops@postgres:5432/rootops"
@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     LOKI_URL: Optional[str] = "http://loki:3100"
     PROMETHEUS_URL: Optional[str] = "http://prometheus:9090"
     TEMPO_URL: Optional[str] = "http://tempo:3200"
+    LOG_PATH: str = "/var/log" # For FileBackend
     
     # ML Model Settings
     MODEL_PATH: str = "/app/models"
@@ -67,7 +68,7 @@ class Settings(BaseSettings):
     # LLM Configuration (Generic)
     LLM_API_KEY: Optional[str] = None
     LLM_PROVIDER: str = "gemini"  # gemini | openai | anthropic
-    LLM_MODEL: str = "gemini-1.5-flash"
+    LLM_MODEL: str = "gemini-pro"
     LLM_MAX_TOKENS: int = 4096
     
     # Advanced Options

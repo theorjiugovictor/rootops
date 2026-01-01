@@ -47,13 +47,13 @@ class BackendDetector:
                 await loki.close()
         
         # Fallback to file-based logs
-        if not self.log_backend:
-            log_path = os.getenv("LOG_FILE_PATH", "/var/log")
-            file_backend = FileBackend(log_path)
+        # 2. File Backend (for PM2, fallback)
+        if not self.log_backend and os.path.exists(settings.LOG_PATH):
+            file_backend = FileBackend(settings.LOG_PATH)
             if await file_backend.health_check():
                 self.log_backend = file_backend
                 detected["logs"] = "file"
-                logger.info(f"Log backend: File ({log_path})")
+                logger.info(f"Log backend: File ({settings.LOG_PATH})")
         
         # Detect metric backend
         if settings.PROMETHEUS_URL:
