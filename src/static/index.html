@@ -198,6 +198,24 @@
 
         <div id="alerts"></div>
 
+        <!-- Intelligence Brief Section -->
+        <div id="intelligenceBrief" class="card"
+            style="margin-bottom: 30px; border-left: 5px solid #58a6ff; display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div>
+                    <h2 style="margin-bottom: 10px; color: #58a6ff;"> 🧠 Intelligence Brief</h2>
+                    <h3 id="briefHeadline" style="color: #c9d1d9;font-size: 1.4em;margin-bottom: 10px;">Analyzing...
+                    </h3>
+                    <div id="briefSummary" style="color: #8b949e; line-height: 1.6;"></div>
+                </div>
+                <div style="text-align: right;">
+                    <div id="briefStatus" style="font-size: 1.2em; font-weight: bold; margin-bottom: 5px;">-</div>
+                    <div id="briefTrend" style="font-size: 0.9em; color: #8b949e;">-</div>
+                    <div style="font-size: 0.7em; color: #30363d; margin-top: 5px;">AI Generated</div>
+                </div>
+            </div>
+        </div>
+
         <div class="grid">
             <div class="card">
                 <h2>Active Monitoring</h2>
@@ -257,6 +275,33 @@
                         ? (data.avg_incident_probability * 100).toFixed(1) + '%'
                         : 'N/A';
                 document.getElementById('totalInsights').textContent = data.total_insights || 0;
+
+                // Update Intelligence Brief
+                if (data.intelligence_brief) {
+                    const brief = data.intelligence_brief;
+                    const briefCard = document.getElementById('intelligenceBrief');
+                    briefCard.style.display = 'block';
+
+                    document.getElementById('briefHeadline').textContent = brief.headline;
+                    document.getElementById('briefSummary').innerHTML = brief.summary.replace(/\n/g, '<br>'); // Simple Markdown-ish
+
+                    const statusEl = document.getElementById('briefStatus');
+                    statusEl.textContent = brief.status;
+
+                    // Color coding
+                    if (brief.status === 'HEALTHY') {
+                        briefCard.style.borderLeftColor = '#3fb950';
+                        statusEl.style.color = '#3fb950';
+                    } else if (brief.status === 'WARNING') {
+                        briefCard.style.borderLeftColor = '#d29922';
+                        statusEl.style.color = '#d29922';
+                    } else {
+                        briefCard.style.borderLeftColor = '#f85149';
+                        statusEl.style.color = '#f85149';
+                    }
+
+                    document.getElementById('briefTrend').textContent = 'Trend: ' + brief.trend;
+                }
 
                 // Update ML Stats
                 if (data.system_health) {
