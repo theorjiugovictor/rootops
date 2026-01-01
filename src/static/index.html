@@ -239,6 +239,8 @@
                 <h2>Log Health</h2>
                 <div class="stat" id="anomalyScore">-</div>
                 <div class="stat-label" id="anomalyStatus">No Anomalies</div>
+                <div style="font-size: 0.8em; color: #8b949e; margin-top: 5px;">Scanned: <span id="logCount">-</span>
+                    logs</div>
             </div>
 
             <div class="card">
@@ -311,6 +313,7 @@
                     document.getElementById('anomalyScore').textContent = anomalyCount;
                     document.getElementById('anomalyStatus').textContent = anomalyCount > 0 ? "Anomalies Detected" : "System Normal";
                     document.getElementById('anomalyScore').style.color = anomalyCount > 0 ? "#f85149" : "#3fb950";
+                    document.getElementById('logCount').textContent = health.log_count || 0;
                 }
 
                 // Performance Forecast (from latest commit)

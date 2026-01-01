@@ -71,6 +71,7 @@ async def get_dashboard_overview(db: AsyncSession = Depends(get_db)):
     
     system_health = {
         "log_anomalies": latest_logs.anomalies if latest_logs else [],
+        "log_count": latest_logs.log_count if latest_logs else 0,
         "error_rate": latest_logs.error_count / latest_logs.log_count if latest_logs and latest_logs.log_count > 0 else 0,
         "last_checked": latest_logs.created_at.isoformat() if latest_logs else None
     }
