@@ -675,27 +675,37 @@ class IntelligenceEngine:
         """
         commit_data = context["commit"]
         
-        # Record commit memory
-        commit_memory = CommitMemory(
-            sha=commit_sha,
-            repository=repository,
-            author=commit_data.get("author"),
-            author_email=commit_data.get("email"),
-            files_changed=commit_data.get("files_changed", 0),
-            lines_added=commit_data.get("additions", 0),
-            lines_deleted=commit_data.get("deletions", 0),
-            risk_score=commit_data.get("risk_score", 0),
-            complexity_score=commit_data.get("complexity_score", 0),
-            blast_radius=commit_data.get("blast_radius", 0),
-            test_ratio=commit_data.get("test_ratio", 0),
-            commit_type=commit_data.get("commit_type"),
-            risky_patterns=commit_data.get("risky_patterns", []),
-            files=commit_data.get("files", []),
-            prediction_details=prediction,
-            committed_at=commit_data.get("timestamp", datetime.utcnow())
+        # Record commit memory (Check if exists first to avoid SQLite concurrency races)
+        existing_commit = await self.db.execute(
+            select(CommitMemory).where(CommitMemory.sha == commit_sha)
         )
-        
-        self.db.add(commit_memory)
+        if not existing_commit.scalar_one_or_none():
+            commit_memory = CommitMemory(
+                sha=commit_sha,
+                repository=repository,
+                author=commit_data.get("author"),
+                author_email=commit_data.get("email"),
+                files_changed=commit_data.get("files_changed", 0),
+                lines_added=commit_data.get("additions", 0),
+                lines_deleted=commit_data.get("deletions", 0),
+                risk_score=commit_data.get("risk_score", 0),
+                complexity_score=commit_data.get("complexity_score", 0),
+                blast_radius=commit_data.get("blast_radius", 0),
+                test_ratio=commit_data.get("test_ratio", 0),
+                commit_type=commit_data.get("commit_type"),
+                risky_patterns=commit_data.get("risky_patterns", []),
+                files=commit_data.get("files", []),
+                prediction_details=prediction,
+                committed_at=commit_data.get("timestamp", datetime.utcnow())
+            )
+            self.db.add(commit_memory)
+            
+            try:
+                await self.db.flush()
+            except Exception as e:
+                # Concurrency race: someone else inserted it while we were checking
+                logger.warning(f"Duplicate commit insertion avoided for {commit_sha}: {e}")
+                await self.db.rollback()
         
         # Record deployment event
         deployment = DeploymentEvent(
@@ -711,9 +721,12 @@ class IntelligenceEngine:
         
         self.db.add(deployment)
         
-        await self.db.commit()
-        
-        logger.info(f"Recorded deployment memory for {commit_sha[:8]}")
+        try:
+            await self.db.commit()
+            logger.info(f"Recorded deployment memory for {commit_sha[:8]}")
+        except Exception as e:
+             logger.error(f"Failed to record deployment: {e}")
+             await self.db.rollback()
     
     async def record_incident(
         self,

@@ -182,18 +182,35 @@ class AutoPoller:
                 logger.error(f"Failed to analyze commit {commit_sha[:8]}: {e}")
     
     async def _analyze_logs(self, logs: list):
-        """Analyze logs for anomalies"""
-        from src.services.log_analyzer import LogAnalyzer
-        
-        analyzer = LogAnalyzer()
-        result = await analyzer.analyze_logs(logs)
-        
-        # Log significant anomalies
-        if result.get("anomalies"):
-            logger.warning(
-                f"Log anomalies detected: {len(result['anomalies'])} issues, "
-                f"error_rate={result.get('error_rate', 0):.3f}"
-            )
+        """Analyze logs for anomalies and save to DB"""
+        async with AsyncSessionLocal() as db:
+            try:
+                from src.services.log_analyzer import LogAnalyzer
+                from src.models.db_models import LogAnalysis
+                
+                analyzer = LogAnalyzer()
+                result = await analyzer.analyze_logs(logs)
+                
+                # Save to database
+                log_analysis = LogAnalysis(
+                    log_count=result["log_count"],
+                    error_count=result["error_count"],
+                    warning_count=result["warning_count"],
+                    anomalies=result["anomalies"],
+                    created_at=datetime.utcnow()
+                )
+                db.add(log_analysis)
+                await db.commit()
+                
+                # Log significant anomalies
+                if result.get("anomalies"):
+                    logger.warning(
+                        f"Log anomalies detected: {len(result['anomalies'])} issues, "
+                        f"error_rate={result.get('error_rate', 0):.3f}"
+                    )
+            except Exception as e:
+                logger.error(f"Failed to analyze/save logs: {e}")
+                await db.rollback()
     
     async def _check_deployment_health(self, logs: list):
         """Check if recent deployments are healthy"""
