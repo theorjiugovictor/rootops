@@ -20,6 +20,7 @@ jobs:
       packages: write
 
     strategy:
+      fail-fast: false
       matrix:
         include:
           - service: api
@@ -51,8 +52,8 @@ jobs:
       - name: Extract version
         id: app_version
         run: |
-          VERSION=$(grep '__version__' api/app/main.py | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          VERSION=$(grep -m1 '__version__' api/app/main.py | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Extract Docker metadata
         id: meta
