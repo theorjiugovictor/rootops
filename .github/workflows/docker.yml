@@ -1,4 +1,4 @@
-name: Build and Publish Docker Image
+name: Build and Publish Docker Images
 
 on:
   push:
@@ -11,6 +11,16 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: api
+            context: ./api
+            image: rootops-api
+          - service: web
+            context: ./web
+            image: rootops-web
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,19 +37,18 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract version from code
+      - name: Extract version
         id: app_version
         run: |
-          VERSION=$(grep 'VERSION: str =' src/config.py | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "DETECTED_VERSION=$VERSION" >> $GITHUB_ENV
+          VERSION=$(grep '__version__' api/app/main.py | sed -E 's/.*"([^"]+)".*/\1/')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build and push
+      - name: Build and push ${{ matrix.service }}
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ${{ matrix.context }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/rootops:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/rootops:${{ env.DETECTED_VERSION }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}:${{ steps.app_version.outputs.version }}
