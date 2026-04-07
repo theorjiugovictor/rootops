@@ -1,0 +1,23 @@
+# ─── RootOps — Development Overrides ──────────────────────────────
+# Applied on top of docker-compose.yml via:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Enables hot-reload for the API (uvicorn --reload) by bind-mounting
+# source code into the container. The web service already hot-reloads
+# in its default dev target.
+
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    environment:
+      DEBUG: "true"
+    volumes:
+      # Bind-mount API source so uvicorn --reload picks up changes instantly
+      - ./api/app:/app/app
+    command: >
+      uv run --no-project uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload

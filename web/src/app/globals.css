@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+/* ── RootOps Design Tokens ──────────────────────────────────── */
+@theme {
+  --color-bg: #060608;
+  --color-bg-card: rgba(10, 10, 14, 0.9);
+  --color-bg-input: rgba(255, 255, 255, 0.04);
+  --color-border: rgba(255, 255, 255, 0.07);
+  --color-border-hover: rgba(255, 255, 255, 0.14);
+  --color-text: #C8D2DF;
+  --color-text-muted: #7E8EA4;
+  --color-text-dim: #384455;
+  --color-text-bright: #EAF0F8;
+  --color-accent: #00D9F5;
+  --color-accent-dim: rgba(0, 217, 245, 0.1);
+  --color-accent-glow: rgba(0, 217, 245, 0.28);
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  --color-info: #3B82F6;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+/* ── Base ─────────────────────────────────────────────────────── */
+html {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-image: radial-gradient(
+    ellipse 120% 60% at 50% -5%,
+    rgba(0, 217, 245, 0.035) 0%,
+    transparent 65%
+  );
+  background-attachment: fixed;
+}
+
+/* ── Selection ──────────────────────────────────────────────── */
+::selection {
+  background: rgba(0, 217, 245, 0.18);
+  color: var(--color-text-bright);
+}
+
+/* ── Focus ──────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 1.5px solid rgba(0, 217, 245, 0.4);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.14); }
+
+/* ── Autofill ────────────────────────────────────────────────── */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px #0a0a0e inset;
+  -webkit-text-fill-color: var(--color-text);
+  caret-color: var(--color-text);
+  border-color: rgba(0, 217, 245, 0.35) !important;
+}
+
+/* ── Animations ─────────────────────────────────────────────── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.18s ease-out both;
+}
+
+/* ── Level badges ────────────────────────────────────────────── */
+.badge-level {
+  color: #64748B;
+  background: rgba(100,116,139,0.10);
+  border-color: rgba(100,116,139,0.22);
+}
+.badge-level[data-level="ERROR"]                         { color: #EF4444; background: rgba(239,68,68,0.10);   border-color: rgba(239,68,68,0.25);   }
+.badge-level[data-level="WARN"],
+.badge-level[data-level="WARNING"]                       { color: #F59E0B; background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.25); }
+.badge-level[data-level="INFO"]                          { color: #3B82F6; background: rgba(59,130,246,0.10);  border-color: rgba(59,130,246,0.25);  }
+.badge-level[data-level="DEBUG"]                         { color: #64748B; background: rgba(100,116,139,0.10); border-color: rgba(100,116,139,0.22); }
+.badge-level[data-level="TRACE"]                         { color: #475569; background: rgba(71,85,105,0.10);   border-color: rgba(71,85,105,0.22);   }
+.badge-level[data-level="FATAL"],
+.badge-level[data-level="CRITICAL"]                      { color: #f87171; background: rgba(127,29,29,0.18);   border-color: rgba(127,29,29,0.35);   }
+
+/* ── Language badges ─────────────────────────────────────────── */
+.badge-lang {
+  color: #64748B;
+  background: rgba(100,116,139,0.08);
+  border-color: rgba(100,116,139,0.18);
+}
+.badge-lang[data-lang="python"]     { color: #3B82F6; background: rgba(59,130,246,0.08);   border-color: rgba(59,130,246,0.20);   }
+.badge-lang[data-lang="javascript"] { color: #F59E0B; background: rgba(245,158,11,0.08);   border-color: rgba(245,158,11,0.20);   }
+.badge-lang[data-lang="typescript"] { color: #60a5fa; background: rgba(96,165,250,0.08);   border-color: rgba(96,165,250,0.20);   }
+.badge-lang[data-lang="go"]         { color: #10B981; background: rgba(16,185,129,0.08);   border-color: rgba(16,185,129,0.20);   }
+.badge-lang[data-lang="rust"]       { color: #F97316; background: rgba(249,115,22,0.08);   border-color: rgba(249,115,22,0.20);   }
+.badge-lang[data-lang="java"]       { color: #EF4444; background: rgba(239,68,68,0.08);    border-color: rgba(239,68,68,0.20);    }
+.badge-lang[data-lang="sql"]        { color: #8B5CF6; background: rgba(139,92,246,0.08);   border-color: rgba(139,92,246,0.20);   }
+.badge-lang[data-lang="shell"]      { color: #94A3B8; background: rgba(148,163,184,0.08);  border-color: rgba(148,163,184,0.18);  }
+
+/* ── Progress bars (dynamic width via CSS custom property) ───── */
+.progress-fill { width: var(--progress-w, 0%); }
+
+/* ── Range input ────────────────────────────────────────────── */
+input[type="range"] {
+  accent-color: var(--color-accent);
+}
+
+/* ── Select arrow color fix ─────────────────────────────────── */
+select option {
+  background: #0a0a0e;
+  color: var(--color-text);
+}

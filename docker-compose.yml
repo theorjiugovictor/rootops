@@ -1,54 +1,153 @@
-version: '3.8'
+# ─── RootOps — Docker Compose ─────────────────────────────────────
+# One command to rule them all: docker compose up
+#
+# Services:
+#   db      → PostgreSQL 16 + pgvector (vector similarity search)
+#   ollama  → Local LLM runtime (free, no API key needed)
+#   api     → FastAPI backend (RAG engine, code intelligence)
+#   web     → Next.js dashboard (supply-chain isolated)
+#
+# Usage:
+#   docker compose up              # start everything
+#   docker compose up -d           # start in background
+#   docker compose down            # stop everything
+#   docker compose logs -f api     # follow API logs
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: rootops-postgres
+  # ── PostgreSQL + pgvector ────────────────────────────────────
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: rootops-db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: rootops
-      POSTGRES_PASSWORD: rootops
-      POSTGRES_DB: rootops
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      POSTGRES_USER: ${POSTGRES_USER:-rootops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rootops}
+      POSTGRES_DB: ${POSTGRES_DB:-rootops}
     ports:
-      - "5432:5432"
-    networks:
-      - rootops-network
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./api/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rootops"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U rootops -d rootops"]
+      interval: 5s
       timeout: 5s
       retries: 5
 
-  # RootOps Intelligence Engine
-  rootops:
-    build: .
-    container_name: rootops
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql://rootops:rootops@postgres:5432/rootops
-      - LOG_LEVEL=INFO
-      - ENABLE_BREAKING_CHANGE_DETECTION=true
-      - ENABLE_ANOMALY_DETECTION=true
-      - ENABLE_PERFORMANCE_PREDICTION=true
-      # GitHub Integration (for enriched commit analysis)
-      # - GITHUB_TOKEN=ghp_your_token_here
-      # - GITHUB_REPO=owner/repo
-      # Optional: Enable LLM enrichment
-      # - ENABLE_LLM_ENRICHMENT=true
-      # - CLAUDE_API_KEY=your-api-key-here
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - rootops-network
+  # ── Ollama (Local LLM — free, no API key) ───────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rootops-ollama
     restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11434/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── RootOps API ─────────────────────────────────────────────
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: rootops-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rootops}:${POSTGRES_PASSWORD:-rootops}@db:5432/${POSTGRES_DB:-rootops}
+      APP_NAME: RootOps
+      DEBUG: ${DEBUG:-false}
+
+      # ── LLM Backend ──────────────────────────────────────────
+      # Options: ollama (default), openai, anthropic, bedrock
+      LLM_BACKEND: ${LLM_BACKEND:-ollama}
+
+      # Ollama (default — runs locally, no API key needed)
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3}
+
+      # OpenAI (optional — set OPENAI_API_KEY in .env)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+
+      # Anthropic (optional — set ANTHROPIC_API_KEY in .env)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+
+      # AWS Bedrock (optional — requires AWS credentials)
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-}
+      BEDROCK_REGION: ${BEDROCK_REGION:-us-east-1}
+
+      # ── Embeddings ───────────────────────────────────────────
+      EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-jinaai/jina-embeddings-v2-base-code}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-768}
+      HF_HOME: /home/rootops/.cache/huggingface
+
+      # ── GitHub (optional — for Auto-Heal PR creation) ────────
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_DEFAULT_REPO: ${GITHUB_DEFAULT_REPO:-}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      # Mount host's HuggingFace cache so models don't need to be
+      # re-downloaded inside the container (avoids Zscaler/VPN issues)
+      - ${HF_HOME:-~/.cache/huggingface}:/home/rootops/.cache/huggingface
+    command: >
+      uv run --no-project uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+
+  # ── RootOps Web (Next.js — isolated) ───────────────────────
+  #
+  # Supply chain isolation:
+  #   • node_modules live in a named volume, never on the host
+  #   • npm install runs inside the container (postinstall scripts
+  #     cannot access host filesystem, env vars, or network)
+  #   • .npmrc disables scripts as a second layer of defence
+  #   • non-root user inside the container
+  #   • network restricted to rootops-internal only
+  #
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      target: dev
+    container_name: rootops-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:8000
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      # Bind-mount source code for hot reload
+      - ./web/src:/app/src
+      - ./web/public:/app/public
+      # IMPORTANT: anonymous volume for node_modules
+      # This keeps container's node_modules from being
+      # overwritten by the bind mount — and keeps them
+      # OFF your host machine entirely
+      - web_node_modules:/app/node_modules
+      # Config files (read-only on host)
+      - ./web/next.config.ts:/app/next.config.ts:ro
+      - ./web/tsconfig.json:/app/tsconfig.json:ro
+      - ./web/postcss.config.mjs:/app/postcss.config.mjs:ro
+      - ./web/package.json:/app/package.json:ro
+      - ./web/.npmrc:/app/.npmrc:ro
 
 volumes:
-  postgres_data:
-
-networks:
-  rootops-network:
-    driver: bridge
+  pgdata:
+    driver: local
+  ollama_data:
+    driver: local
+  web_node_modules:
+    driver: local
