@@ -1,20 +1,16 @@
-# RootOps
-
 <div align="center">
 
-<img src=".github/logo.png" alt="RootOps Logo" width="200"/>
+<img src="asset/RootOpsWhite.png" alt="RootOps" width="220" />
 
-**AI-Powered DevOps Intelligence Platform**
+*Code is everywhere. Understanding is not.*
 
-[![Docker Pulls](https://img.shields.io/docker/pulls/theorjiugovictor/rootops)](https://hub.docker.com/r/theorjiugovictor/rootops)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+**The developer intelligence platform that learns your system over time, running entirely on your infrastructure.**
 
-*Predictive insights for your DevOps pipeline - not reactive responses*
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![Python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
 
-[Quick Start](#quick-start) •
-[Documentation](docs/) •
-[Examples](examples/) •
-[Contributing](CONTRIBUTING.md)
+[Quick Start](#quick-start) · [Features](#features) · [Architecture](#architecture) · [LLM Backends](#llm-backends) · [Configuration](#configuration) · [Contributing](#contributing)
 
 </div>
 
@@ -22,96 +18,297 @@
 
 ## What is RootOps?
 
-RootOps is a **zero-configuration intelligence engine** that analyzes your software delivery lifecycle to predict incidents before they happen. By correlating data from **Git**, **Logs**, and **Traces**, it builds a long-term memory of your system's health and evolution.
+RootOps is a developer intelligence platform that sits alongside your entire engineering workflow. It ingests your Git repositories, application logs, and runtime events and builds a persistent, semantic understanding of your codebase, your services, and the people who build them.
 
-### Key Capabilities
+On a normal day, engineers use it to search code in natural language, understand unfamiliar services, review pull requests with full codebase context, trace log errors back to the exact lines that produced them, and map who knows what across the team. The understanding accumulates over time into a causal knowledge graph that connects services, code, errors, and contributors — so the platform becomes more useful the longer it runs, not just during incidents.
 
-*   **Narrative Intelligence**: Generates an "Intelligence Brief" (executive summary) of your system's health, risks, and trends using generic LLM support (OpenAI, Gemini, Anthropic).
-*   **Predictive Risk**: Forecasts deployment success 80% more accurately than heuristic scanners using XGBoost.
-*   **Universal Log Parsing**: Automatically parses standard log files (syslog, application logs) and structured JSON formats, using anomaly detection to find hidden errors without complex configuration.
-*   **Performance Forecasting**: Predicts latency impact of code changes before they hit production.
-*   **Local & Private**: Works completely offline with your local git repo. Your data stays yours.
-*   **Zero Config**: Auto-detects Loki, Prometheus, and Postgres. Starts working in seconds.
+It does all of this entirely on your own infrastructure. Your code, your logs, and your engineering history never leave your machine. That is a hard constraint that no cloud-based tool can match.
+
+---
+
+## Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) 24+ and [Docker Compose](https://docs.docker.com/compose/install/) v2
+- **8 GB RAM** available for Docker (required by the default Llama 3 model via Ollama)
+- Git
+
+> If RAM is constrained, switch to a smaller Ollama model (e.g. `gemma3:2b`) by setting `OLLAMA_MODEL=gemma3:2b` in `.env`, or use a cloud backend (OpenAI, Anthropic) which has no local memory requirement.
+
+---
 
 ## Quick Start
 
-### 1. Docker Run (Production Ready)
-
-Use the pre-built image with persistence and full AI features enabled.
-
 ```bash
-docker run -d \
-  --name rootops \
-  --network="host" \
-  -v /var/log:/logs:ro \
-  -v /root/rootops_data:/app/db \
-  -e DATABASE_URL=sqlite:///./db/rootops.db \
-  -e GITHUB_REPO=owner/repo \
-  -e GITHUB_TOKEN=your_token \
-  -e LLM_PROVIDER=gemini \
-  -e LLM_API_KEY=your_key \
-  theorjiugovictor/rootops:1.0.11
+git clone https://github.com/rootops-dev/rootops-v3.git
+cd rootops-v3
+make up
 ```
 
-> **Note**: Replace `gemini` with `openai` or `anthropic` as needed. The volume mount `/root/rootops_data` ensures your history is saved.
+`make up` copies `.env.example` to `.env`, starts all services, and pulls the default Ollama model automatically. Open **http://localhost:3000** when it completes.
 
-Access the dashboard at [http://localhost:8000/dashboard](http://localhost:8000/dashboard).
+The default configuration uses **Ollama** with Llama 3, free, fully local, no API key required.
 
-### 2. Local Demo (No Docker)
+### Use a cloud LLM (optional)
 
-Try it on your current repository instantly:
+Set your key and backend before running `make up`:
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# OpenAI
+export OPENAI_API_KEY=sk-...
+echo -e "LLM_BACKEND=openai\nOPENAI_API_KEY=$OPENAI_API_KEY" >> .env
 
-# Run the local analysis demo
-export LLM_API_KEY="your_key"
-export LLM_PROVIDER="gemini"
-python demo_local_repo.py .
+# Anthropic
+export ANTHROPIC_API_KEY=sk-ant-...
+echo -e "LLM_BACKEND=anthropic\nANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" >> .env
+
+# AWS Bedrock (picks up ~/.aws credentials automatically)
+echo "LLM_BACKEND=bedrock" >> .env
+
+make up
 ```
 
-## Configuration
+Or edit `.env` directly. See [LLM Backends](#llm-backends) for the full list of options.
 
-Customize RootOps behavior using environment variables.
+### Ingest your first repository
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LLM_PROVIDER` | `gemini` | `gemini`, `openai`, or `anthropic` |
-| `LLM_MODEL` | `gemini-pro` | Model name (e.g., `gpt-4o`, `claude-3-sonnet`, `gemini-1.5-flash`) |
-| `LLM_API_KEY` | - | Your API Key |
-| `GITHUB_REPO` | - | Repository to link (Owner/Name) |
-| `DATABASE_URL` | `postgresql://...` | DB Connection string (supports SQLite) |
-| `LOG_PATH` | `/var/log` | Path to scan for logs (if not using Loki) |
+1. Open the dashboard at **http://localhost:3000**
+2. Navigate to **Settings**
+3. Enter a local repository path or a Git URL
+4. RootOps will chunk, embed, and index the codebase
 
-## Documentation
+The interactive API reference (Swagger UI) is available at **http://localhost:8000/docs**.
 
-*   [**Architecture**](docs/architecture.md): Deep dive into the Service, ML, and Data layers.
-*   [**API Reference**](docs/api-reference.md): Complete REST API documentation.
-*   [**Integration Guide**](docs/INTEGRATION_GUIDE.md): How to connect GitHub, Loki, Prometheus, and Tempo.
+---
+
+## Features
+
+### Code Intelligence
+
+**Natural language search:** Ask questions about your codebase in plain English. RootOps retrieves the most relevant code chunks using dense vector search, applies cross-encoder reranking for precision, and synthesises an answer with exact file and line references.
+
+**Streaming Q&A:** Responses stream token-by-token via SSE. Conversation history is maintained across turns so follow-up questions retain full context.
+
+**HyDE (Hypothetical Document Embedding):** Before embedding a query, RootOps asks the LLM to generate a hypothetical code answer, then searches code-to-code rather than text-to-code. This significantly improves retrieval accuracy on technical questions.
+
+**Query planner:** Queries are classified by intent (diagnostic, architecture, impact, general) and routed to specialised retrieval strategies including parallel vector search across code and log domains.
+
+### Repository Management
+
+**Multi-repository ingestion:** Ingest any number of Git repositories, each tagged with a service name, team, and custom labels. Supports both local paths and remote Git URLs.
+
+**Commit-level indexing:** Every commit is chunked, embedded, and stored with author, timestamp, and diff context so queries can reference historical changes.
+
+**Dependency graph:** RootOps builds a cross-repository knowledge graph of service dependencies, causal relationships, and entity co-occurrences. Causal edges are promoted through confidence levels (observed > correlates_with > probable_cause > confirmed_cause) based on incident evidence and statistical analysis.
+
+### Log Intelligence
+
+**OTLP/HTTP receiver:** Accepts logs directly from OpenTelemetry SDKs and Collectors at the standard `POST /v1/logs` endpoint. No sidecar or agent required.
+
+Point any OTel-compatible exporter at RootOps:
+
+```yaml
+# OpenTelemetry Collector config
+exporters:
+  otlphttp:
+    endpoint: http://localhost:8000
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    logs:
+      exporters: [otlphttp]
+```
+
+**Raw log ingestion:** Paste or pipe raw log text through the dashboard or API. Logs are parsed, severity-filtered, deduplicated, and embedded into the same vector space as code.
+
+**Log concept clustering:** Drain3-based log template clustering groups recurring log patterns into concepts with temporal histograms. Rising concepts (accelerating frequency) are surfaced proactively.
+
+**Code correlation:** Log entries are matched to the source code that produced them using cosine similarity across the shared embedding space.
+
+### Auto-Heal
+
+**Error diagnosis:** RootOps diagnoses error logs by retrieving the most relevant code context and asking the LLM to identify the root cause.
+
+**Fix generation:** For diagnosed issues above a confidence threshold, RootOps generates a corrected code snippet.
+
+**PR creation:** Approved fixes are submitted as pull requests to GitHub automatically via the GitHub API. Requires a GitHub personal access token (`GITHUB_TOKEN`).
+
+### Developer Profiles
+
+**Contribution analytics:** Per-developer commit history is analysed to identify primary languages, file ownership, and contribution patterns.
+
+**Expertise mapping:** Profiles are enriched by the LLM to produce a narrative summary of each developer's technical focus areas, useful for code review assignment and onboarding.
+
+---
 
 ## Architecture
 
-RootOps employs a microservices-inspired architecture designed for resilience:
+```
+┌─────────────────────────────────────────────────────┐
+│                     Next.js UI                       │
+│            (Dashboard · App Router pages)            │
+└───────────────────────┬─────────────────────────────┘
+                        │ HTTP / SSE
+┌───────────────────────▼─────────────────────────────┐
+│                  FastAPI Backend                      │
+│                                                       │
+│  ┌─────────────┐  ┌────────────┐  ┌───────────────┐  │
+│  │  RAG Engine │  │    Git     │  │  LLM Backend  │  │
+│  │  + Reranker │  │  Ingestor  │  │  Dispatcher   │  │
+│  └──────┬──────┘  └─────┬──────┘  └──┬───┬───┬───┘  │
+│         │               │            │   │   │       │
+│  ┌──────▼───────────────▼──┐      Ollama  │  OAI    │
+│  │   PostgreSQL + pgvector  │    Bedrock  Anthropic  │
+│  │   (embeddings + graph)   │                        │
+│  └─────────────────────────┘                         │
+└─────────────────────────────────────────────────────┘
+```
 
+**Components:**
+
+| Component | Role |
+|-----------|------|
+| PostgreSQL + pgvector | Stores code chunks, commits, logs, embeddings, and knowledge graph edges |
+| Sentence Transformers | Local embedding model (`jinaai/jina-embeddings-v2-base-code`, 768-dim, 8192-token context) |
+| Cross-encoder reranker | Re-scores retrieval candidates for precision (`cross-encoder/ms-marco-MiniLM-L-6-v2`) |
+| Ollama | Local LLM runtime, default backend (Llama 3) |
+| FastAPI | Async API: RAG pipeline, ingestion, healing, profiles |
+| Next.js | Developer dashboard (TypeScript, Tailwind CSS) |
+
+---
+
+## LLM Backends
+
+Set `LLM_BACKEND` in `.env` to switch providers:
+
+| Backend | `LLM_BACKEND` | API Key Required | Notes |
+|---------|---------------|------------------|-------|
+| **Ollama** (default) | `ollama` | No | Free, local, private. Bundled in Docker Compose. |
+| **OpenAI** | `openai` | Yes (`OPENAI_API_KEY`) | GPT-4o, GPT-4o-mini, and others. |
+| **Anthropic** | `anthropic` | Yes (`ANTHROPIC_API_KEY`) | Claude Sonnet, Haiku, Opus. |
+| **AWS Bedrock** | `bedrock` | AWS credentials | Claude and Llama via AWS. Uses `~/.aws` automatically. |
+
+---
+
+## Configuration
+
+All settings are environment variables. Copy `.env.example` to `.env` and edit as needed:
+
+```bash
+cp .env.example .env
 ```
-┌─────────────────┐       ┌──────────────────┐
-│  Auto-Poller    │──────▶│ Intelligence     │
-│ (Git/Logs/Metrics)      │     Engine       │
-└─────────────────┘       └────────┬─────────┘
-                                   │
-      ┌──────────────┬─────────────┼──────────────┐
-      ▼              ▼             ▼              ▼
-┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐
-│  XGBoost   │ │  Multi-LLM │ │ Isolation  │ │ SQLite/PG  │
-│ Classifier │ │   Client   │ │  Forest    │ │   Memory   │
-└────────────┘ └────────────┘ └────────────┘ └────────────┘
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_BACKEND` | `ollama` | LLM provider: `ollama`, `openai`, `anthropic`, `bedrock` |
+| `OLLAMA_MODEL` | `llama3` | Model name for Ollama |
+| `OPENAI_API_KEY` | | OpenAI API key |
+| `ANTHROPIC_API_KEY` | | Anthropic API key |
+| `EMBEDDING_MODEL_NAME` | `jinaai/jina-embeddings-v2-base-code` | Sentence transformer model |
+| `EMBEDDING_DIMENSION` | `768` | Must match the model's output dimension |
+| `HYDE_ENABLED` | `true` | Enable Hypothetical Document Embedding |
+| `RERANKER_ENABLED` | `true` | Enable cross-encoder reranking |
+| `POSTGRES_DB` | `rootops` | Database name |
+| `GITHUB_TOKEN` | | GitHub PAT for Auto-Heal PR creation |
+| `API_PORT` | `8000` | API port |
+| `WEB_PORT` | `3000` | Dashboard port |
+
+See [.env.example](.env.example) for the full list with documentation.
+
+---
+
+## Development
+
+### Make commands
+
+```bash
+make help             # List all available commands
+make up               # Start all services and pull the LLM model
+make dev              # Start with API hot-reload (source bind-mount)
+make down             # Stop all services
+make logs             # Tail all service logs
+make logs-api         # Tail API logs only
+make logs-web         # Tail Web UI logs only
+make pull-model       # Pull or update the configured Ollama model
+make pull-embeddings  # Pre-download the embedding model to host cache (~600 MB)
+make build            # Rebuild all containers
+make clean            # Stop and remove all volumes (deletes all data)
 ```
+
+### Running without Docker
+
+```bash
+# Start PostgreSQL and Ollama only
+docker compose up -d db ollama
+
+# Run the API with hot-reload
+cd api
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync
+uv run uvicorn app.main:app --reload --port 8000
+
+# Run the web UI
+cd web
+npm install
+npm run dev
+```
+
+### Tests
+
+```bash
+cd api && python -m pytest tests/ -v
+```
+
+---
+
+## Deployment
+
+Docker Compose is the recommended deployment method:
+
+```bash
+docker compose up -d
+```
+
+RootOps runs anywhere Docker is available:
+
+- **Railway / Render:** deploy each service independently
+- **AWS ECS / GCP Cloud Run:** containerised deployment
+- **Kubernetes:** use the Docker images with your own manifests
+
+The only hard infrastructure requirement is **PostgreSQL with the pgvector extension**.
+
+---
+
+## Roadmap
+
+- [ ] GitLab and Bitbucket integration
+- [ ] Webhook-based real-time ingestion
+- [ ] Custom embedding model support
+- [ ] Plugin system for custom analyses
+- [ ] VS Code extension
+- [ ] Slack and Teams notifications
+
+---
+
+## Security
+
+To report a vulnerability, please see [SECURITY.md](SECURITY.md). We follow responsible disclosure and aim to respond within 72 hours.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+Apache License 2.0. See [LICENSE](LICENSE) for details.
+
+---
 
 <div align="center">
-Built by the RootOps Community
+
+Built by engineers, for engineers.
+
+[Star on GitHub](https://github.com/rootops-dev/rootops-v3) · [Documentation](docs/) · [Report a Bug](https://github.com/rootops-dev/rootops-v3/issues)
+
 </div>

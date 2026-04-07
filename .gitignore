@@ -1,32 +1,16 @@
-# Python
+# Dependencies
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-.venv/
-ENV/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
+dist/
+build/
+.eggs/
 
 # Environment
 .env
-.env.local
+.venv/
+venv/
+env/
 
 # IDE
 .vscode/
@@ -34,31 +18,26 @@ wheels/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
-Thumbs.db
 
-# Models
-models/*.pkl
-models/*.joblib
-model_artifacts/
-*.h5
-*.pb
+# Claude Code
+.claude/
+
+# Docker
+docker-compose.override.yml
+
+# Database
+*.sql.bak
+
+# Models cache
+models_cache/
+
+# Corporate CA certificates (never commit)
+*.pem
+*.crt
 
 # Logs
 *.log
-logs/
-!src/integrations/logs/
 
-# Database
-*.db
-*.sqlite
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Docker
-.dockerignore
+# OS
+Thumbs.db

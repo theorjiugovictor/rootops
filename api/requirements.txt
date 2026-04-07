@@ -1,0 +1,56 @@
+# RootOps API — Core Dependencies
+
+# Web Framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Database
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+pgvector==0.3.6
+
+# Configuration
+pydantic-settings==2.7.1
+
+# Migrations
+alembic==1.14.1
+
+# Utilities
+python-dotenv==1.0.1
+
+# ── RAG Pipeline ─────────────────────────────────────────────────
+
+# Embeddings (local, runs on CPU)
+sentence-transformers>=3.0.0
+
+# Git repository access
+gitpython>=3.1.0
+
+# Async HTTP (for Ollama + general HTTP calls)
+httpx>=0.27.0,<0.28.0
+
+# ── Optional LLM Backends ────────────────────────────────────────
+# Uncomment the backends you want to use.
+# Ollama requires no extra packages (uses httpx).
+
+# OpenAI (GPT-4o, GPT-4o-mini, etc.)
+openai>=1.30.0
+
+# Anthropic (Claude Sonnet, Haiku, Opus)
+anthropic>=0.25.0
+
+# AWS Bedrock (requires AWS credentials)
+# boto3>=1.34.0
+
+# ── GitHub Integration (for Auto-Heal PR creation) ───────────────
+# PyGithub>=2.0.0
+
+# ── Log Pattern Mining (LogConcept tiered pipeline) ─────────────
+drain3>=0.9.11
+
+# ── Statistical analysis (evidence-gated causation) ─────────────
+scipy>=1.13.0
+
+# ── OpenTelemetry (OTLP log receiver — JSON parsing only) ───────
+# No extra deps needed — OTLP/HTTP JSON is parsed natively.
+# The protobuf format is not required; all OTEL SDKs support JSON.
