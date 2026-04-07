@@ -1,9 +1,10 @@
 .PHONY: up down logs build clean pull status ps web web-logs web-shell web-audit dev pull-model pull-embeddings list-models
 
 # ── Quick Start ──────────────────────────────────────────────────
-up: ## Start everything (Postgres, Ollama, API, Web) and pull LLM model
+up: ## Pull latest images and start everything (Postgres, Ollama, API, Web)
 	@cp -n .env.example .env 2>/dev/null || true
-	docker compose up --build -d
+	docker compose pull api web
+	docker compose up -d
 	@echo ""
 	@echo "Waiting for Ollama to be ready..."
 	@for i in $$(seq 1 30); do \
@@ -12,13 +13,13 @@ up: ## Start everything (Postgres, Ollama, API, Web) and pull LLM model
 	done
 	@$(MAKE) pull-model --no-print-directory
 	@echo ""
-	@echo "✅ RootOps is ready!"
+	@echo "RootOps is ready."
 	@echo ""
-	@echo "   Dashboard:  http://localhost:3000"
-	@echo "   API:        http://localhost:8000"
-	@echo "   API Docs:   http://localhost:8000/docs"
+	@echo "  Dashboard:  http://localhost:3000"
+	@echo "  API:        http://localhost:8000"
+	@echo "  API Docs:   http://localhost:8000/docs"
 	@echo ""
-	@echo "   Embedding model downloads automatically on first query (~600 MB)."
+	@echo "  Embedding model downloads automatically on first query (~600 MB)."
 
 down: ## Stop everything
 	docker compose down
@@ -27,16 +28,13 @@ clean: ## Stop everything and delete all data (database, models, etc.)
 	docker compose down -v
 	@echo "All data removed."
 
-# ── Development ──────────────────────────────────────────────────
-dev: ## Start with hot-reload for API + Web (mounts source code)
+# ── Development (build from source) ─────────────────────────────
+dev: ## Build from source with hot-reload for API and Web
 	@cp -n .env.example .env 2>/dev/null || true
 	docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
-build: ## Rebuild all images
-	docker compose build --no-cache
-
-pull: ## Pull latest base images
-	docker compose pull
+build: ## Rebuild source images (for development)
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache
 
 # ── Observability ────────────────────────────────────────────────
 logs: ## Follow all service logs
@@ -69,12 +67,12 @@ pull-embeddings: ## Pre-download the embedding model to host cache (~600 MB)
 list-models: ## List downloaded Ollama models
 	docker compose exec ollama ollama list
 
-# ── Web (Next.js — containerised) ────────────────────────────────
+# ── Web (Next.js) ────────────────────────────────────────────────
 web: ## Start ONLY the Next.js frontend (+ API + DB)
-	docker compose up --build web api db -d
+	docker compose up web api db -d
 	@echo ""
-	@echo "✅ Web UI:  http://localhost:3000"
-	@echo "   API:     http://localhost:8000"
+	@echo "  Web UI:  http://localhost:3000"
+	@echo "  API:     http://localhost:8000"
 
 web-logs: ## Follow Next.js container logs
 	docker compose logs -f web
@@ -82,12 +80,12 @@ web-logs: ## Follow Next.js container logs
 web-shell: ## Open a shell inside the web container (for debugging)
 	docker compose exec web sh
 
-web-audit: ## Run npm audit inside the container
+web-audit: ## Run npm audit inside the web container
 	docker compose exec web npm audit
 
 # ── Help ─────────────────────────────────────────────────────────
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
+		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 .DEFAULT_GOAL := help

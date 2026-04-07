@@ -1,12 +1,15 @@
 # ─── RootOps — Development Overrides ──────────────────────────────
-# Applied on top of docker-compose.yml via:
-#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Builds all images from source and mounts code for hot-reload.
+# Use this if you are contributing to RootOps or want to run
+# unreleased changes.
 #
-# Enables hot-reload for the API (uvicorn --reload) by bind-mounting
-# source code into the container. The web service already hot-reloads
-# in its default dev target.
+# Usage:
+#   make dev
+#   # or manually:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 services:
+  # ── API: build from source + hot-reload ──────────────────────
   api:
     build:
       context: ./api
@@ -14,10 +17,31 @@ services:
     environment:
       DEBUG: "true"
     volumes:
-      # Bind-mount API source so uvicorn --reload picks up changes instantly
       - ./api/app:/app/app
     command: >
       uv run --no-project uvicorn app.main:app
       --host 0.0.0.0
       --port 8000
       --reload
+
+  # ── Web: build from source + hot-reload ─────────────────────
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      target: dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./web/src:/app/src
+      - ./web/public:/app/public
+      - ./web/next.config.ts:/app/next.config.ts:ro
+      - ./web/tsconfig.json:/app/tsconfig.json:ro
+      - ./web/postcss.config.mjs:/app/postcss.config.mjs:ro
+      - ./web/package.json:/app/package.json:ro
+      - ./web/.npmrc:/app/.npmrc:ro
+      - web_node_modules:/app/node_modules
+
+volumes:
+  web_node_modules:
+    driver: local

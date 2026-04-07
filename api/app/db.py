@@ -43,9 +43,14 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Create all tables — dev convenience; use Alembic in production."""
+    """Create all tables and required extensions on startup.
+
+    Handles the full DB bootstrap so no external SQL script is needed.
+    Safe to run on every startup — all operations are idempotent.
+    """
     from app.models.base import Base  # noqa: F811
 
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
         await conn.run_sync(Base.metadata.create_all)

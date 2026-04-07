@@ -38,15 +38,30 @@ It does all of this entirely on your own infrastructure. Your code, your logs, a
 
 ## Quick Start
 
+No source code required. Download the compose file and start:
+
 ```bash
-git clone https://github.com/rootops-dev/rootops-v3.git
-cd rootops-v3
-make up
+curl -O https://raw.githubusercontent.com/theorjiugovictor/rootops/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/theorjiugovictor/rootops/main/.env.example
+cp .env.example .env
+docker compose up -d
 ```
 
-`make up` copies `.env.example` to `.env`, starts all services, and pulls the default Ollama model automatically. Open **http://localhost:3000** when it completes.
+Docker pulls the pre-built images from GitHub Container Registry and starts all four services. Open **http://localhost:3000** when the containers are healthy.
 
 The default configuration uses **Ollama** with Llama 3, free, fully local, no API key required.
+
+> On first run, Ollama needs to download the Llama 3 model (~4 GB). Run `docker compose exec ollama ollama pull llama3` after startup, or use `make up` (see below) which handles this automatically.
+
+### Using Make (recommended)
+
+If you have the repository cloned, `make up` handles everything — pulls latest images, starts services, and downloads the LLM model:
+
+```bash
+git clone https://github.com/theorjiugovictor/rootops.git
+cd rootops
+make up
+```
 
 ### Use a cloud LLM (optional)
 
@@ -224,15 +239,15 @@ See [.env.example](.env.example) for the full list with documentation.
 
 ```bash
 make help             # List all available commands
-make up               # Start all services and pull the LLM model
-make dev              # Start with API hot-reload (source bind-mount)
+make up               # Pull latest images, start all services, pull LLM model
+make dev              # Build from source with hot-reload (contributors)
 make down             # Stop all services
 make logs             # Tail all service logs
 make logs-api         # Tail API logs only
 make logs-web         # Tail Web UI logs only
 make pull-model       # Pull or update the configured Ollama model
 make pull-embeddings  # Pre-download the embedding model to host cache (~600 MB)
-make build            # Rebuild all containers
+make build            # Rebuild source images
 make clean            # Stop and remove all volumes (deletes all data)
 ```
 

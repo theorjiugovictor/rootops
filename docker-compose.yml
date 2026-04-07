@@ -1,17 +1,14 @@
 # ─── RootOps — Docker Compose ─────────────────────────────────────
-# One command to rule them all: docker compose up
-#
-# Services:
-#   db      → PostgreSQL 16 + pgvector (vector similarity search)
-#   ollama  → Local LLM runtime (free, no API key needed)
-#   api     → FastAPI backend (RAG engine, code intelligence)
-#   web     → Next.js dashboard (supply-chain isolated)
+# Pulls pre-built images from GitHub Container Registry.
+# No source code or build tools required.
 #
 # Usage:
-#   docker compose up              # start everything
-#   docker compose up -d           # start in background
+#   docker compose up -d           # start everything in background
 #   docker compose down            # stop everything
 #   docker compose logs -f api     # follow API logs
+#
+# First run: Ollama will pull the LLM model (~4 GB). Run 'make up'
+# instead of 'docker compose up' to have this handled automatically.
 
 services:
   # ── PostgreSQL + pgvector ────────────────────────────────────
@@ -27,7 +24,6 @@ services:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./api/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rootops -d rootops"]
       interval: 5s
@@ -51,9 +47,7 @@ services:
 
   # ── RootOps API ─────────────────────────────────────────────
   api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
+    image: ghcr.io/theorjiugovictor/rootops-api:latest
     container_name: rootops-api
     restart: unless-stopped
     depends_on:
@@ -95,59 +89,28 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
-      # Mount host's HuggingFace cache so models don't need to be
-      # re-downloaded inside the container (avoids Zscaler/VPN issues)
+      # HuggingFace model cache — persisted on host so the embedding model
+      # (~600 MB) is only downloaded once across container rebuilds
       - ${HF_HOME:-~/.cache/huggingface}:/home/rootops/.cache/huggingface
-    command: >
-      uv run --no-project uvicorn app.main:app
-      --host 0.0.0.0
-      --port 8000
 
-  # ── RootOps Web (Next.js — isolated) ───────────────────────
-  #
-  # Supply chain isolation:
-  #   • node_modules live in a named volume, never on the host
-  #   • npm install runs inside the container (postinstall scripts
-  #     cannot access host filesystem, env vars, or network)
-  #   • .npmrc disables scripts as a second layer of defence
-  #   • non-root user inside the container
-  #   • network restricted to rootops-internal only
-  #
+  # ── RootOps Web (Next.js) ────────────────────────────────────
   web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-      target: dev
+    image: ghcr.io/theorjiugovictor/rootops-web:latest
     container_name: rootops-web
     restart: unless-stopped
     depends_on:
       - api
     environment:
+      # Internal Docker network address of the API — used by the Next.js
+      # server to proxy /api/* requests. Not exposed to the browser.
       NEXT_PUBLIC_API_URL: http://api:8000
-      NODE_ENV: development
+      NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
     ports:
       - "${WEB_PORT:-3000}:3000"
-    volumes:
-      # Bind-mount source code for hot reload
-      - ./web/src:/app/src
-      - ./web/public:/app/public
-      # IMPORTANT: anonymous volume for node_modules
-      # This keeps container's node_modules from being
-      # overwritten by the bind mount — and keeps them
-      # OFF your host machine entirely
-      - web_node_modules:/app/node_modules
-      # Config files (read-only on host)
-      - ./web/next.config.ts:/app/next.config.ts:ro
-      - ./web/tsconfig.json:/app/tsconfig.json:ro
-      - ./web/postcss.config.mjs:/app/postcss.config.mjs:ro
-      - ./web/package.json:/app/package.json:ro
-      - ./web/.npmrc:/app/.npmrc:ro
 
 volumes:
   pgdata:
     driver: local
   ollama_data:
-    driver: local
-  web_node_modules:
     driver: local
