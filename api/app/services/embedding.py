@@ -19,16 +19,16 @@ Wraps sentence-transformers for:
   3. Embedding versioning — each vector is tagged with EMBEDDING_MODEL_VERSION
      from config so blue/green index migration is safe when the model changes.
 
-Embeddings run in a ProcessPoolExecutor for true memory isolation from the
-FastAPI async event loop (prevents huggingface_hub httpx closure crashes).
-Reranking runs in the same pool.
+Embeddings run in a ThreadPoolExecutor to avoid blocking the FastAPI async
+event loop. Thread workers share model memory (no duplication), making this
+safe on VMs with limited RAM. Reranking runs in the same pool.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from sentence_transformers import CrossEncoder, SentenceTransformer
@@ -38,7 +38,7 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-_pool = ProcessPoolExecutor(max_workers=2)
+_pool = ThreadPoolExecutor(max_workers=2)
 
 # Per-process model caches — loaded once per worker process.
 _embed_cache: dict[str, SentenceTransformer] = {}

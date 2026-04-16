@@ -264,7 +264,18 @@ async def ingest_repository(
     if all_chunks:
         logger.info("Embedding %d chunks...", len(all_chunks))
         texts = [c.content for c, _ in all_chunks]
-        embeddings = await embed_batch(texts)
+
+        # Embed in sub-batches to limit peak memory on smaller VMs.
+        # Each sub-batch is sent to the process pool independently.
+        EMBED_SUB_BATCH = 100
+        embeddings: list[list[float]] = []
+        for i in range(0, len(texts), EMBED_SUB_BATCH):
+            sub = texts[i : i + EMBED_SUB_BATCH]
+            logger.info(
+                "  Embedding batch %d-%d of %d",
+                i + 1, min(i + EMBED_SUB_BATCH, len(texts)), len(texts),
+            )
+            embeddings.extend(await embed_batch(sub))
 
         # ── 4. Store chunks in DB ────────────────────────────────
         for (chunk, commit_sha), embedding in zip(all_chunks, embeddings):
