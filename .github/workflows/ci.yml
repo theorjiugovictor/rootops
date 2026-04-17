@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, "feat/**", "fix/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Python API tests ──────────────────────────────────────────────
+  api-tests:
+    name: API — Unit Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    defaults:
+      run:
+        working-directory: api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies (with test extras)
+        run: uv pip install --system -e ".[test]"
+
+      - name: Run unit tests (no DB or GPU required)
+        env:
+          # Minimal env so Settings() can initialise without real credentials
+          DATABASE_URL: "postgresql+asyncpg://rootops:rootops@localhost:5432/rootops"
+          LLM_BACKEND: "openai"
+          OPENAI_API_KEY: "sk-test-fake-key-for-ci"
+        run: |
+          python -m pytest tests/ -v \
+            --tb=short \
+            -x \
+            --ignore=tests/test_api_health.py
+
+  # ── TypeScript / Next.js type-check ──────────────────────────────
+  web-typecheck:
+    name: Web — TypeScript Type Check
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+  # ── Python lint ───────────────────────────────────────────────────
+  api-lint:
+    name: API — Lint (ruff)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Lint
+        run: ruff check app/
+
+  # ── Docker build smoke test ───────────────────────────────────────
+  # Runs on every push AND every PR so broken images are caught before merge.
+  docker-build:
+    name: Docker — Build images
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API Docker image
+        run: docker build -t rootops-api:ci ./api
+
+      - name: Build Web Docker image
+        run: docker build -t rootops-web:ci ./web

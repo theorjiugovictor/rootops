@@ -148,6 +148,18 @@ async def diagnose(session: AsyncSession, service_name: str | None = None) -> li
     Returns:
         List of diagnosis dicts with trust-ladder fields populated.
     """
+    # Guard: LLM required for diagnosis
+    if not settings.LLM_AVAILABLE:
+        backend = settings.LLM_BACKEND.lower()
+        logger.info("Auto-heal skipped: LLM unavailable (backend=%s, no API key)", backend)
+        return [{
+            "error": (
+                "Auto-heal requires an LLM but no API key is configured.  "
+                f"Set {backend.upper()}_API_KEY or switch LLM_BACKEND to a "
+                "provider you have credentials for."
+            )
+        }]
+
     await session.execute(delete(PendingFix))
     await session.commit()
 
@@ -182,10 +194,10 @@ async def diagnose(session: AsyncSession, service_name: str | None = None) -> li
                 start_line,
                 end_line,
                 language,
-                1 - (embedding <=> :embedding::halfvec) AS similarity
+                1 - (embedding <=> CAST(:embedding AS halfvec)) AS similarity
             FROM code_chunks
             WHERE embedding IS NOT NULL
-            ORDER BY embedding <=> :embedding::halfvec
+            ORDER BY embedding <=> CAST(:embedding AS halfvec)
             LIMIT 5
         """)
         related_code = (

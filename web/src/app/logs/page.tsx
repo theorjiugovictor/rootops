@@ -33,7 +33,12 @@ export default function LogsPage() {
     getOtelReceiverStatus().then(setOtelStatus);
   }
 
-  useEffect(refresh, []);
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 10_000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (selectedExample && LOG_EXAMPLES[selectedExample]) {
@@ -114,6 +119,53 @@ export default function LogsPage() {
     endpoint: http://rootops-api:8000`}
           </pre>
         </Card>
+      </div>
+
+      {/* Quick ingest via curl */}
+      <div className="mb-8">
+        <SectionTitle>Quick Ingest via curl</SectionTitle>
+        <div className="grid lg:grid-cols-3 gap-3">
+          {[
+            {
+              label: "Pipe stdout",
+              code: `your-service 2>&1 | curl -s -X POST \\
+  http://localhost:8000/api/ingest/logs \\
+  -H 'Content-Type: application/json' \\
+  -d @- <<< "{\\"raw_text\\":\\"$(cat)\\",\\"service_name\\":\\"my-svc\\"}"`,
+            },
+            {
+              label: "Paste a log file",
+              code: `curl -s -X POST \\
+  http://localhost:8000/api/ingest/logs \\
+  -H 'Content-Type: application/json' \\
+  -d "{\\"raw_text\\":\\"$(cat app.log | head -200)\\",\\"service_name\\":\\"app\\"}"`,
+            },
+            {
+              label: "OTEL collector",
+              code: `# otel-collector-config.yaml
+exporters:
+  otlphttp:
+    endpoint: http://localhost:8000
+
+service:
+  pipelines:
+    logs:
+      exporters: [otlphttp]`,
+            },
+          ].map(({ label, code }) => (
+            <div
+              key={label}
+              className="rounded-[12px] border border-white/[0.07] bg-[rgba(6,6,10,0.6)] p-4"
+            >
+              <div className="text-[11px] font-semibold text-text-dim uppercase tracking-wider mb-2.5">
+                {label}
+              </div>
+              <pre className="text-[10.5px] text-text-muted font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap break-all">
+                {code}
+              </pre>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Active filters */}

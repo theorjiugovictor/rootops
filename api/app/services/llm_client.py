@@ -50,14 +50,15 @@ async def generate_ollama(
         "stream": False,
         "options": {
             "temperature": temperature,
-            "num_predict": 2048,
+            "num_predict": 512,
+            "num_ctx": 4096,
         },
     }
 
     try:
         async with httpx.AsyncClient(
             base_url=settings.OLLAMA_BASE_URL,
-            timeout=120.0,
+            timeout=300.0,
         ) as client:
             response = await client.post("/api/chat", json=payload)
             response.raise_for_status()
@@ -80,8 +81,8 @@ async def generate_ollama(
         return f"⚠️ LLM error: {e}"
 
     except Exception as e:
-        logger.error("Unexpected LLM error: %s", e)
-        return f"⚠️ Unexpected error communicating with Ollama: {e}"
+        logger.error("Unexpected LLM error (%s): %s", type(e).__name__, e)
+        return f"⚠️ Unexpected error communicating with Ollama: {type(e).__name__}: {e}"
 
 
 import json
@@ -104,11 +105,11 @@ async def generate_ollama_stream(
         "model": model_name,
         "messages": messages,
         "stream": True,
-        "options": {"temperature": temperature, "num_predict": 2048},
+        "options": {"temperature": temperature, "num_predict": 512, "num_ctx": 4096},
     }
 
     try:
-        async with httpx.AsyncClient(base_url=settings.OLLAMA_BASE_URL, timeout=120.0) as client:
+        async with httpx.AsyncClient(base_url=settings.OLLAMA_BASE_URL, timeout=300.0) as client:
             async with client.stream("POST", "/api/chat", json=payload) as response:
                 response.raise_for_status()
                 async for chunk in response.aiter_lines():

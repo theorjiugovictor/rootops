@@ -4,17 +4,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PageHeader, Card, Button, LevelBadge, EmptyState } from "@/components/ui";
 import { SimilarityBar } from "@/components/charts";
 import {
-  queryCosebase,
+  streamQuery,
   getRepositories,
-  type QueryPayload,
   type QueryResult,
   type Repository,
 } from "@/lib/api";
 import { Send, Trash2, SlidersHorizontal } from "lucide-react";
+import { Markdown } from "@/components/markdown";
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  isStreaming?: boolean;
   result?: QueryResult;
 }
 
@@ -29,89 +30,197 @@ const SUGGESTED = [
   "Where is authentication handled?",
 ];
 
-export default function IntelligencePage() {
-  const [messages, setMessages]       = useState<ChatMessage[]>([]);
-  const [input, setInput]             = useState("");
-  const [loading, setLoading]         = useState(false);
-  const [repos, setRepos]             = useState<Repository[]>([]);
-  const [scopedIds, setScopedIds]     = useState<string[]>([]);
-  const [useLlm, setUseLlm]           = useState(true);
-  const [topK, setTopK]               = useState(5);
-  const [showConfig, setShowConfig]   = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
+const LS_MESSAGES_KEY  = "rootops-intel-messages";
+const LS_SCOPED_KEY    = "rootops-intel-scoped";
+const LS_TOP_K_KEY     = "rootops-intel-topk";
+const MAX_STORED_MSGS  = 50;
 
+export default function IntelligencePage() {
+  const [messages, setMessages]     = useState<ChatMessage[]>([]);
+  const [input, setInput]           = useState("");
+  const [streaming, setStreaming]   = useState(false);
+  const [repos, setRepos]           = useState<Repository[]>([]);
+  const [scopedIds, setScopedIds]   = useState<string[]>([]);
+  const [useLlm]                    = useState(true);
+  const [topK, setTopK]             = useState(5);
+  const [showConfig, setShowConfig] = useState(false);
+  const endRef  = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<(() => void) | null>(null);
+
+  // ── Restore state from localStorage ──────────────────────────
   useEffect(() => {
-    getRepositories().then((r) => setRepos(r.repos));
+    try {
+      const saved = localStorage.getItem(LS_MESSAGES_KEY);
+      if (saved) {
+        const parsed: ChatMessage[] = JSON.parse(saved);
+        // Strip streaming flags from persisted messages
+        setMessages(parsed.map((m) => ({ ...m, isStreaming: false })));
+      }
+    } catch { /* ignore parse errors */ }
+
+    try {
+      const savedIds = localStorage.getItem(LS_SCOPED_KEY);
+      if (savedIds) setScopedIds(JSON.parse(savedIds));
+    } catch { /* ignore */ }
+
+    try {
+      const savedK = localStorage.getItem(LS_TOP_K_KEY);
+      if (savedK) setTopK(Number(savedK));
+    } catch { /* ignore */ }
   }, []);
 
+  // ── Persist messages (non-streaming only) ────────────────────
+  useEffect(() => {
+    const stable = messages.filter((m) => !m.isStreaming);
+    if (stable.length === 0) return;
+    try {
+      localStorage.setItem(
+        LS_MESSAGES_KEY,
+        JSON.stringify(stable.slice(-MAX_STORED_MSGS)),
+      );
+    } catch { /* storage quota exceeded — silently skip */ }
+  }, [messages]);
+
+  // ── Persist config ────────────────────────────────────────────
+  useEffect(() => {
+    try { localStorage.setItem(LS_SCOPED_KEY, JSON.stringify(scopedIds)); } catch { /* ignore */ }
+  }, [scopedIds]);
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_TOP_K_KEY, String(topK)); } catch { /* ignore */ }
+  }, [topK]);
+
+  // ── Load repos ────────────────────────────────────────────────
+  useEffect(() => {
+    getRepositories().then((r) => setRepos(r.repos)).catch(() => {});
+  }, []);
+
+  // ── Auto-scroll ───────────────────────────────────────────────
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // ── Build conversation history from prior messages ────────────
   const buildHistory = useCallback(
-    (msgs: ChatMessage[]): QueryPayload["conversation_history"] =>
-      msgs.slice(-10).map((m) => ({
-        role:    m.role,
-        content: m.role === "assistant" ? m.result?.answer || m.content : m.content,
-      })),
+    (msgs: ChatMessage[]) =>
+      msgs
+        .filter((m) => !m.isStreaming)
+        .slice(-10)
+        .map((m) => ({
+          role:    m.role,
+          content: m.role === "assistant" ? m.result?.answer ?? m.content : m.content,
+        })),
     [],
   );
 
+  // ── Send a message (streaming) ────────────────────────────────
   async function send(text?: string) {
-    const q = (text || input).trim();
-    if (!q) return;
+    const q = (text ?? input).trim();
+    if (!q || streaming) return;
     setInput("");
-    setLoading(true);
+    setStreaming(true);
 
+    // Add user message
     const userMsg: ChatMessage = { role: "user", content: q };
-    const current = [...messages, userMsg];
-    setMessages(current);
+    const priorMessages = [...messages, userMsg];
+    setMessages(priorMessages);
+
+    // Optimistic assistant placeholder
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: "", isStreaming: true },
+    ]);
+
+    let fullAnswer = "";
+    let streamResult: QueryResult | undefined;
+    let aborted = false;
+
+    // Expose an abort handle so the Stop button can cancel
+    const abortController = new AbortController();
+    abortRef.current = () => {
+      aborted = true;
+      abortController.abort();
+    };
 
     try {
-      const res = await queryCosebase({
+      const gen = streamQuery({
         question:             q,
         top_k:                topK,
         use_llm:              useLlm,
-        conversation_history: buildHistory(current),
+        conversation_history: buildHistory(priorMessages),
         repo_ids:             scopedIds.length ? scopedIds : undefined,
       });
 
-      const answer = res.ok
-        ? res.answer || ""
-        : `Error: ${res.error || "Query failed"}`;
+      for await (const event of gen) {
+        if (aborted) break;
 
-      setMessages([
-        ...current,
-        { role: "assistant", content: answer, result: res.ok ? res : undefined },
-      ]);
-    } catch (err) {
-      setMessages([
-        ...current,
-        { role: "assistant", content: `Error: ${err instanceof Error ? err.message : "Unexpected error"}` },
-      ]);
+        if (event.type === "metadata") {
+          streamResult = {
+            ok:          true,
+            sources:     event.data?.sources,
+            log_matches: event.data?.log_matches,
+            metadata:    event.data?.metadata,
+          };
+          // Show sources immediately, before tokens arrive
+          setMessages((prev) => [
+            ...prev.slice(0, -1),
+            { role: "assistant", content: fullAnswer, isStreaming: true, result: streamResult },
+          ]);
+        } else if (event.type === "token") {
+          fullAnswer += event.data ?? "";
+          setMessages((prev) => [
+            ...prev.slice(0, -1),
+            { role: "assistant", content: fullAnswer, isStreaming: true, result: streamResult },
+          ]);
+        } else if (event.type === "error") {
+          fullAnswer = `⚠️ ${event.data ?? "Stream error"}`;
+          break;
+        }
+      }
+    } catch {
+      if (!aborted) fullAnswer = fullAnswer || "⚠️ Stream connection failed.";
     } finally {
-      setLoading(false);
+      abortRef.current = null;
+      setStreaming(false);
+      // Finalise the assistant message (mark not-streaming so it persists)
+      setMessages((prev) => [
+        ...prev.slice(0, -1),
+        {
+          role: "assistant",
+          content: fullAnswer || "(no answer)",
+          isStreaming: false,
+          result: streamResult,
+        },
+      ]);
     }
+  }
+
+  function handleStop() {
+    abortRef.current?.();
+  }
+
+  function clearHistory() {
+    setMessages([]);
+    try { localStorage.removeItem(LS_MESSAGES_KEY); } catch { /* ignore */ }
   }
 
   return (
     <>
       <PageHeader
         title="System Intelligence"
-        subtitle="Hybrid RAG across code and logs — semantically searched, synthesised by LLM"
+        subtitle="Streaming RAG across code and logs — real-time token-by-token synthesis"
         action={
           <div className="flex items-center gap-2">
-            {messages.length > 0 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setMessages([])}
-              >
+            {streaming ? (
+              <Button type="button" variant="danger" size="sm" onClick={handleStop}>
+                Stop
+              </Button>
+            ) : messages.length > 0 ? (
+              <Button type="button" variant="ghost" size="sm" onClick={clearHistory}>
                 <Trash2 size={12} />
                 Clear
               </Button>
-            )}
+            ) : null}
             <Button
               type="button"
               variant="secondary"
@@ -125,7 +234,7 @@ export default function IntelligencePage() {
         }
       />
 
-      {/* Config panel (toggled) */}
+      {/* Config panel */}
       {showConfig && (
         <Card className="mb-6 animate-fade-up">
           <div className="flex flex-wrap gap-8">
@@ -143,8 +252,7 @@ export default function IntelligencePage() {
                         onChange={(e) =>
                           setScopedIds(e.target.checked
                             ? [...scopedIds, r.id]
-                            : scopedIds.filter((id) => id !== r.id)
-                          )
+                            : scopedIds.filter((id) => id !== r.id))
                         }
                         className="accent-accent"
                       />
@@ -155,22 +263,10 @@ export default function IntelligencePage() {
               </div>
             )}
             <div className="flex items-center gap-6">
-              <label className="flex items-center gap-2 text-[12.5px] text-text-muted cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={useLlm}
-                  onChange={(e) => setUseLlm(e.target.checked)}
-                  className="accent-accent"
-                />
-                LLM synthesis
-              </label>
               <div className="flex items-center gap-3">
                 <span className="text-[11px] text-text-dim">Sources: {topK}</span>
                 <input
-                  type="range"
-                  min={1}
-                  max={15}
-                  value={topK}
+                  type="range" min={1} max={15} value={topK}
                   onChange={(e) => setTopK(Number(e.target.value))}
                   aria-label="Number of sources"
                   className="w-24 accent-accent"
@@ -193,7 +289,8 @@ export default function IntelligencePage() {
                 key={q}
                 type="button"
                 onClick={() => send(q)}
-                className="w-full text-left px-3 py-2 text-[12px] text-[#4E5E72] hover:text-text-muted hover:bg-white/[0.03] rounded-lg transition-all duration-150 leading-snug"
+                disabled={streaming}
+                className="w-full text-left px-3 py-2 text-[12px] text-[#4E5E72] hover:text-text-muted hover:bg-white/[0.03] rounded-lg transition-all duration-150 leading-snug disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {q}
               </button>
@@ -207,7 +304,7 @@ export default function IntelligencePage() {
             <Card className="mb-6 bg-white/[0.015]">
               <EmptyState
                 title="Ask anything about your codebase."
-                description="Search semantically across code and logs. Scope to a specific repo or ask globally."
+                description="Responses stream token-by-token. Scope to a specific repo or ask globally. Conversation history is preserved across page refreshes."
               />
             </Card>
           )}
@@ -226,12 +323,35 @@ export default function IntelligencePage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <Card className={msg.role === "user" ? "bg-white/[0.025]" : ""}>
-                    <div className="text-[13px] text-text leading-relaxed whitespace-pre-wrap">
-                      {msg.content || (
-                        <span className="text-text-dim italic">No LLM answer — sources below.</span>
+                    <div className="text-[13px] text-text leading-relaxed">
+                      {msg.content ? (
+                        msg.role === "assistant" ? (
+                          <Markdown content={msg.content} />
+                        ) : (
+                          <span className="whitespace-pre-wrap">{msg.content}</span>
+                        )
+                      ) : (
+                        msg.isStreaming
+                          ? <span className="flex items-center gap-1.5 text-text-dim">
+                              <span className="animate-pulse">Thinking</span>
+                              <span className="flex gap-1">
+                                {(["[animation-delay:0ms]", "[animation-delay:150ms]", "[animation-delay:300ms]"] as const).map((delay) => (
+                                  <span
+                                    key={delay}
+                                    className={`w-1 h-1 rounded-full bg-text-dim animate-bounce ${delay}`}
+                                  />
+                                ))}
+                              </span>
+                            </span>
+                          : <span className="text-text-dim italic">No answer</span>
+                      )}
+                      {/* Streaming cursor */}
+                      {msg.isStreaming && msg.content && (
+                        <span className="inline-block w-0.5 h-4 bg-accent/80 ml-0.5 animate-pulse align-middle" />
                       )}
                     </div>
 
+                    {/* Code sources */}
                     {msg.result?.sources && msg.result.sources.length > 0 && (
                       <div className="mt-4 pt-4 border-t border-white/[0.06]">
                         <SimilarityBar
@@ -241,6 +361,7 @@ export default function IntelligencePage() {
                       </div>
                     )}
 
+                    {/* Correlated log entries */}
                     {msg.result?.log_matches && msg.result.log_matches.length > 0 && (
                       <div className="mt-4 pt-4 border-t border-white/[0.06]">
                         <div className="text-[10px] font-semibold uppercase tracking-widest text-text-dim mb-3">
@@ -266,42 +387,24 @@ export default function IntelligencePage() {
                 </div>
               </div>
             ))}
-
-            {loading && (
-              <div className="flex gap-3 animate-fade-up">
-                <div className="w-7 h-7 rounded-full bg-accent/[0.1] text-accent border border-accent/20 flex items-center justify-center text-[10px] font-bold mt-0.5 animate-pulse">
-                  ◆
-                </div>
-                <Card className="flex-1 bg-white/[0.015]">
-                  <div className="flex items-center gap-2 text-[13px] text-text-dim">
-                    <span className="animate-pulse">Thinking</span>
-                    <span className="flex gap-1">
-                      <span className="w-1 h-1 rounded-full bg-text-dim animate-bounce [animation-delay:0ms]" />
-                      <span className="w-1 h-1 rounded-full bg-text-dim animate-bounce [animation-delay:150ms]" />
-                      <span className="w-1 h-1 rounded-full bg-text-dim animate-bounce [animation-delay:300ms]" />
-                    </span>
-                  </div>
-                </Card>
-              </div>
-            )}
             <div ref={endRef} />
           </div>
 
-          {/* Input */}
-          <div className="flex gap-2.5 sticky bottom-0 pt-2">
+          {/* Input bar */}
+          <div className="flex gap-2.5 sticky bottom-0 pt-2 pb-1">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
               placeholder="Ask about your codebase…"
-              className="flex-1 px-4 py-3 bg-bg-input border border-white/[0.09] rounded-xl text-[13px] text-text placeholder:text-text-dim focus:border-accent/40 focus:ring-2 focus:ring-accent/[0.07] outline-none transition-all"
-              disabled={loading}
+              disabled={streaming}
+              className="flex-1 px-4 py-3 bg-bg-input border border-white/[0.09] rounded-xl text-[13px] text-text placeholder:text-text-dim focus:border-accent/40 focus:ring-2 focus:ring-accent/[0.07] outline-none transition-all disabled:opacity-60"
             />
             <Button
               type="button"
               onClick={() => send()}
-              disabled={loading || !input.trim()}
+              disabled={streaming || !input.trim()}
             >
               <Send size={14} />
               Send

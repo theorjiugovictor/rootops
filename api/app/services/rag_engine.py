@@ -145,10 +145,10 @@ async def _search_log_concepts(
                 temporal_histogram,
                 daily_counts,
                 correlations,
-                1 - (embedding <=> :embedding::halfvec) AS similarity
+                1 - (embedding <=> CAST(:embedding AS halfvec)) AS similarity
             FROM log_concepts
             WHERE embedding IS NOT NULL
-            ORDER BY embedding <=> :embedding::halfvec
+            ORDER BY embedding <=> CAST(:embedding AS halfvec)
             LIMIT :fetch_k
         """)
         rows = (await session.execute(sql, {"embedding": embedding_str, "fetch_k": fetch_k})).fetchall()
@@ -254,7 +254,7 @@ async def query_codebase(
     concept_fetch_k = plan.concept_fetch_k if plan else 10
 
     # ── Step 2: HyDE ─────────────────────────────────────────────────────
-    if use_llm and settings.HYDE_ENABLED:
+    if use_llm and settings.HYDE_ENABLED and settings.LLM_AVAILABLE:
         search_text = await _hyde_query(question)
     else:
         search_text = question
@@ -283,11 +283,11 @@ async def query_codebase(
                 end_line,
                 language,
                 commit_sha,
-                1 - (embedding <=> :embedding::halfvec) AS similarity
+                1 - (embedding <=> CAST(:embedding AS halfvec)) AS similarity
             FROM code_chunks
             WHERE embedding IS NOT NULL
             {repo_clause}
-            ORDER BY embedding <=> :embedding::halfvec
+            ORDER BY embedding <=> CAST(:embedding AS halfvec)
             LIMIT :fetch_k
         """)
         code_rows = (await session.execute(
@@ -323,11 +323,11 @@ async def query_codebase(
                 parsed_error,
                 file_reference,
                 line_reference,
-                1 - (embedding <=> :embedding::halfvec) AS similarity
+                1 - (embedding <=> CAST(:embedding AS halfvec)) AS similarity
             FROM log_entries
             WHERE embedding IS NOT NULL
             {log_repo_clause}
-            ORDER BY embedding <=> :embedding::halfvec
+            ORDER BY embedding <=> CAST(:embedding AS halfvec)
             LIMIT :fetch_k
         """)
         log_rows = (await session.execute(
@@ -517,7 +517,7 @@ async def stream_query_codebase(
     if similarity_threshold is None:
         similarity_threshold = settings.RAG_SIMILARITY_THRESHOLD
 
-    search_text = await _hyde_query(question) if settings.HYDE_ENABLED else question
+    search_text = await _hyde_query(question) if (settings.HYDE_ENABLED and settings.LLM_AVAILABLE) else question
     query_embedding = await embed_text(search_text)
     embedding_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
     fetch_k = settings.RERANKER_CANDIDATES if settings.RERANKER_ENABLED else top_k
@@ -525,9 +525,9 @@ async def stream_query_codebase(
 
     code_sql = text(f"""
         SELECT repo_id, file_path, chunk_content, start_line, end_line, language, commit_sha,
-               1 - (embedding <=> :embedding::halfvec) AS similarity
+               1 - (embedding <=> CAST(:embedding AS halfvec)) AS similarity
         FROM code_chunks WHERE embedding IS NOT NULL {repo_clause}
-        ORDER BY embedding <=> :embedding::halfvec LIMIT :fetch_k
+        ORDER BY embedding <=> CAST(:embedding AS halfvec) LIMIT :fetch_k
     """)
     code_rows = (await session.execute(code_sql, {"embedding": embedding_str, "fetch_k": fetch_k})).fetchall()
     sources = [
@@ -539,9 +539,9 @@ async def stream_query_codebase(
 
     log_sql = text(f"""
         SELECT service_name, timestamp, level, message, parsed_error, file_reference, line_reference,
-               1 - (embedding <=> :embedding::halfvec) AS similarity
+               1 - (embedding <=> CAST(:embedding AS halfvec)) AS similarity
         FROM log_entries WHERE embedding IS NOT NULL {repo_clause}
-        ORDER BY embedding <=> :embedding::halfvec LIMIT :fetch_k
+        ORDER BY embedding <=> CAST(:embedding AS halfvec) LIMIT :fetch_k
     """)
     log_rows = (await session.execute(log_sql, {"embedding": embedding_str, "fetch_k": fetch_k})).fetchall()
     log_matches = [

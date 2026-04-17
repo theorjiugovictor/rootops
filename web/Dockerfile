@@ -60,6 +60,12 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# The API URL must be set at build time because Next.js rewrites()
+# are baked into routes-manifest.json during `next build`.
+# In Docker Compose the API service is reachable at http://api:8000.
+ARG NEXT_PUBLIC_API_URL=http://api:8000
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
 RUN npm run build
 
 # ── Stage 4: production runtime ──────────────────────────────────

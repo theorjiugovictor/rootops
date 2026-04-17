@@ -17,8 +17,8 @@ export function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between pb-6 mb-7 border-b border-white/[0.055]">
-      <div>
+    <div className="flex flex-wrap items-start justify-between gap-3 pb-6 mb-7 border-b border-white/[0.055]">
+      <div className="min-w-0">
         <h1 className="text-[21px] font-bold tracking-tight text-text-bright leading-tight">
           {title}
         </h1>
@@ -69,20 +69,20 @@ export function Metric({
       {accent && (
         <div className="absolute inset-0 bg-gradient-to-br from-accent/[0.07] to-transparent pointer-events-none" />
       )}
-      <div className="relative">
+      <div className="relative min-w-0">
         <div className="flex items-center gap-1.5 mb-2">
           {icon && (
             <span className={clsx("shrink-0", accent ? "text-accent/60" : "text-text-dim/60")}>
               {icon}
             </span>
           )}
-          <div className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-text-dim/80">
+          <div className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-text-dim/80 truncate">
             {label}
           </div>
         </div>
         <div
           className={clsx(
-            "text-[24px] font-bold tracking-tight leading-none",
+            "text-[24px] font-bold tracking-tight leading-none truncate",
             accent ? "text-accent" : "text-text-bright"
           )}
         >
@@ -97,7 +97,7 @@ export function Metric({
 
 export function ConnectionStatus({ ok, extra }: { ok: boolean; extra?: string }) {
   return (
-    <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-white/[0.025] border border-white/[0.06] rounded-xl">
+    <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-white/[0.025] border border-white/[0.06] rounded-xl min-w-0">
       <span
         className={clsx(
           "w-2 h-2 rounded-full shrink-0",
@@ -106,7 +106,7 @@ export function ConnectionStatus({ ok, extra }: { ok: boolean; extra?: string })
             : "bg-error shadow-[0_0_8px_rgba(239,68,68,0.55)]"
         )}
       />
-      <span className="text-xs font-medium text-text-muted">
+      <span className="text-xs font-medium text-text-muted truncate">
         {ok ? "Connected" : "Offline"}
         {extra && (
           <span className="text-text-dim ml-1.5">· {extra}</span>
@@ -179,7 +179,7 @@ export function Card({
   return (
     <div
       className={clsx(
-        "rounded-[14px] border transition-all duration-200",
+        "rounded-[14px] border transition-all duration-200 overflow-hidden",
         variant === "inset"
           ? "bg-white/[0.015] border-white/[0.045] p-5"
           : "bg-[rgba(8,8,12,0.8)] border-white/[0.07] p-5 backdrop-blur-sm hover:border-white/[0.12]",

@@ -12,22 +12,31 @@ import {
 } from "@/components/ui";
 import {
   getHealth,
+  getDetailedHealth,
   getIngestStatus,
   getRepositories,
   triggerIngest,
   deleteRepository,
   type Repository,
 } from "@/lib/api";
-import { ChevronDown, GitBranch, Layers, Trash2 } from "lucide-react";
+import { ChevronDown, GitBranch, Layers, Trash2, CheckCircle2, XCircle, AlertCircle, RefreshCw } from "lucide-react";
 
 const INPUT_CLS =
   "w-full px-3.5 py-2.5 bg-bg-input border border-white/[0.09] rounded-xl text-[13px] text-text placeholder:text-text-dim focus:border-accent/40 focus:ring-2 focus:ring-accent/[0.07] outline-none transition-all";
+
+interface DetailedHealth {
+  ok: boolean;
+  checks?: Record<string, { ok: boolean; detail?: string; [key: string]: unknown }>;
+  error?: string;
+}
 
 export default function SettingsPage() {
   const [health, setHealth]   = useState<Record<string, unknown>>({});
   const [stats, setStats]     = useState<Record<string, number>>({});
   const [state, setState]     = useState("unknown");
   const [repos, setRepos]     = useState<Repository[]>([]);
+  const [detailedHealth, setDetailedHealth] = useState<DetailedHealth | null>(null);
+  const [healthLoading, setHealthLoading]   = useState(false);
 
   // Ingest form
   const [mode, setMode]               = useState<"path" | "url">("url");
@@ -53,7 +62,18 @@ export default function SettingsPage() {
     getRepositories().then((r) => setRepos(r.repos));
   }
 
-  useEffect(refresh, []);
+  async function fetchDetailedHealth() {
+    setHealthLoading(true);
+    const res = await getDetailedHealth().catch(() => ({ ok: false }));
+    setDetailedHealth(res as DetailedHealth);
+    setHealthLoading(false);
+  }
+
+  useEffect(() => {
+    refresh();
+    fetchDetailedHealth();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleIngest() {
     const input = mode === "url" ? urlInput : pathInput;
@@ -109,13 +129,73 @@ export default function SettingsPage() {
       />
 
       {/* Status row */}
-      <div className="grid grid-cols-3 gap-3 mb-10">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-10">
         <ConnectionStatus
           ok={!!health.ok}
           extra={(process.env.NEXT_PUBLIC_API_URL || "localhost:8000").replace(/^https?:\/\//, "")}
         />
         <Metric label="State"  value={stateLabel[state] || "Unknown"} icon={<Layers size={11} />} />
         <Metric label="Chunks" value={(stats.chunks_ingested ?? 0).toLocaleString()} icon={<GitBranch size={11} />} />
+      </div>
+
+      {/* System status panel */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <SectionTitle>System Status</SectionTitle>
+          <button
+            type="button"
+            onClick={fetchDetailedHealth}
+            disabled={healthLoading}
+            className="flex items-center gap-1.5 text-[11px] text-text-dim hover:text-text transition-colors disabled:opacity-40"
+          >
+            <RefreshCw size={11} className={healthLoading ? "animate-spin" : ""} />
+            Refresh
+          </button>
+        </div>
+
+        {detailedHealth ? (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {detailedHealth.checks &&
+              Object.entries(detailedHealth.checks).map(([key, check]) => {
+                const label =
+                  key === "database"        ? "Database"
+                  : key === "embedding"     ? "Embedding"
+                  : key === "llm"           ? "LLM Backend"
+                  : key === "github_token"  ? "GitHub Token"
+                  : key;
+                return (
+                  <div
+                    key={key}
+                    className={`rounded-[12px] border p-3.5 flex flex-col gap-2 ${
+                      check.ok
+                        ? "border-success/[0.18] bg-success/[0.03]"
+                        : "border-error/[0.18] bg-error/[0.03]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {check.ok
+                        ? <CheckCircle2 size={13} className="text-success shrink-0" />
+                        : <XCircle      size={13} className="text-error   shrink-0" />
+                      }
+                      <span className="text-[12.5px] font-semibold text-text-bright">{label}</span>
+                    </div>
+                    {check.detail && (
+                      <p className="text-[11px] text-text-dim leading-relaxed">{check.detail}</p>
+                    )}
+                  </div>
+                );
+              })
+            }
+            {!detailedHealth.checks && (
+              <div className="sm:col-span-2 lg:col-span-4 flex items-center gap-2 text-[12.5px] text-error">
+                <AlertCircle size={13} />
+                {detailedHealth.error ?? "Could not reach health endpoint."}
+              </div>
+            )}
+          </div>
+        ) : healthLoading ? (
+          <div className="text-[12px] text-text-dim animate-pulse">Checking system status…</div>
+        ) : null}
       </div>
 
       {/* Ingest form */}
@@ -285,7 +365,7 @@ export default function SettingsPage() {
           <div className="space-y-2.5">
             {repos.map((repo) => (
               <Card key={repo.id} className="group">
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[13.5px] font-semibold text-text-bright">
@@ -325,7 +405,7 @@ export default function SettingsPage() {
                     size="sm"
                     type="button"
                     onClick={() => handleDelete(repo)}
-                    className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                   >
                     <Trash2 size={12} />
                     Delete

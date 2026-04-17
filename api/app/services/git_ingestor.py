@@ -11,6 +11,7 @@ the cross-repo dependency graph.
 
 from __future__ import annotations
 
+import gc
 import hashlib
 import logging
 import shutil
@@ -230,7 +231,10 @@ async def ingest_repository(
     tree = git_repo.head.commit.tree
 
     all_chunks: list[tuple[ChunkResult, str]] = []
-    file_contents_for_deps: list[tuple[str, str]] = []  # for dep extraction
+    # Only collect full file contents when dep extraction is enabled;
+    # this list holds every file's text and can be large.
+    collect_deps = not settings.DISABLE_DEP_EXTRACTION
+    file_contents_for_deps: list[tuple[str, str]] = []
 
     for blob in _walk_tree(tree):
         file_path = blob.path
@@ -251,7 +255,8 @@ async def ingest_repository(
             chunk.file_path = file_path
             all_chunks.append((chunk, head_sha))
 
-        file_contents_for_deps.append((file_path, content))
+        if collect_deps:
+            file_contents_for_deps.append((file_path, content))
         stats["files_processed"] += 1
 
     logger.info(
@@ -260,52 +265,63 @@ async def ingest_repository(
         len(all_chunks),
     )
 
-    # ── 3. Embed all chunks in batches ───────────────────────────
+    # ── 3. Embed & store chunks in batches ─────────────────────────
+    # Process in sub-batches to limit peak memory: embed a batch,
+    # write it to the DB, then release that memory before the next.
     if all_chunks:
         logger.info("Embedding %d chunks...", len(all_chunks))
-        texts = [c.content for c, _ in all_chunks]
 
-        # Embed in sub-batches to limit peak memory on smaller VMs.
-        # Each sub-batch is sent to the process pool independently.
-        EMBED_SUB_BATCH = 100
-        embeddings: list[list[float]] = []
-        for i in range(0, len(texts), EMBED_SUB_BATCH):
-            sub = texts[i : i + EMBED_SUB_BATCH]
+        EMBED_SUB_BATCH = settings.EMBED_BATCH_SIZE  # default 64; set lower on small VMs
+
+        for i in range(0, len(all_chunks), EMBED_SUB_BATCH):
+            batch = all_chunks[i : i + EMBED_SUB_BATCH]
+            texts = [c.content[: settings.EMBED_MAX_CHARS] for c, _ in batch]
             logger.info(
                 "  Embedding batch %d-%d of %d",
-                i + 1, min(i + EMBED_SUB_BATCH, len(texts)), len(texts),
+                i + 1, min(i + EMBED_SUB_BATCH, len(all_chunks)), len(all_chunks),
             )
-            embeddings.extend(await embed_batch(sub))
+            embeddings = await embed_batch(texts)
 
-        # ── 4. Store chunks in DB ────────────────────────────────
-        for (chunk, commit_sha), embedding in zip(all_chunks, embeddings):
-            existing = await session.execute(
-                select(CodeChunk).where(
-                    CodeChunk.file_path == chunk.file_path,
-                    CodeChunk.start_line == chunk.start_line,
-                    CodeChunk.commit_sha == commit_sha,
+            # Store this sub-batch immediately
+            for (chunk, commit_sha), embedding in zip(batch, embeddings):
+                existing = await session.execute(
+                    select(CodeChunk).where(
+                        CodeChunk.file_path == chunk.file_path,
+                        CodeChunk.start_line == chunk.start_line,
+                        CodeChunk.commit_sha == commit_sha,
+                    )
                 )
-            )
-            if existing.scalar_one_or_none():
-                continue
+                if existing.scalar_one_or_none():
+                    continue
 
-            chunk_record = CodeChunk(
-                id=uuid.uuid4(),
-                repo_id=repo_id,
-                file_path=chunk.file_path,
-                chunk_content=chunk.content,
-                start_line=chunk.start_line,
-                end_line=chunk.end_line,
-                language=chunk.language,
-                embedding=embedding,
-                commit_sha=commit_sha,
-            )
-            session.add(chunk_record)
-            stats["chunks_ingested"] += 1
+                chunk_record = CodeChunk(
+                    id=uuid.uuid4(),
+                    repo_id=repo_id,
+                    file_path=chunk.file_path,
+                    chunk_content=chunk.content,
+                    start_line=chunk.start_line,
+                    end_line=chunk.end_line,
+                    language=chunk.language,
+                    embedding=embedding,
+                    commit_sha=commit_sha,
+                )
+                session.add(chunk_record)
+                stats["chunks_ingested"] += 1
 
-        await session.flush()
+            # Commit this sub-batch and evict ORM objects from the
+            # session identity map so their Python-side memory (especially
+            # the 768-dim embedding lists) is freed before the next batch.
+            await session.commit()
+            session.expire_all()
+            del embeddings, texts, batch
+            gc.collect()
+            logger.info("  Batch committed, session cleared")
 
     # ── 5. Update repository counters ────────────────────────────
+    # Re-fetch the repo record because session.expire_all() in the
+    # embedding loop invalidated it.  Accessing expired attributes on an
+    # async session triggers the "greenlet_spawn" error.
+    repo_record = await session.get(Repository, repo_id)
     repo_record.chunk_count = (
         repo_record.chunk_count + stats["chunks_ingested"]
     )
@@ -324,25 +340,37 @@ async def ingest_repository(
     )
 
     # ── 6. Dependency extraction ─────────────────────────────────
-    try:
-        from app.services.dep_extractor import extract_and_persist_dependencies
-        dep_count = await extract_and_persist_dependencies(
-            session,
-            source_repo_id=repo_id,
-            source_repo_name=repo_name,
-            file_contents=file_contents_for_deps,
-        )
-        await session.commit()
-        stats["dependencies_found"] = dep_count
-        logger.info("Dependency extraction complete: %d patterns", dep_count)
-    except Exception:
-        logger.warning("Dependency extraction failed — ingestion still succeeded")
+    if settings.DISABLE_DEP_EXTRACTION:
+        logger.info("Dependency extraction disabled (DISABLE_DEP_EXTRACTION=true) — skipping")
+    else:
+        try:
+            from app.services.dep_extractor import extract_and_persist_dependencies
+            dep_count = await extract_and_persist_dependencies(
+                session,
+                source_repo_id=repo_id,
+                source_repo_name=repo_name,
+                file_contents=file_contents_for_deps,
+            )
+            await session.commit()
+            stats["dependencies_found"] = dep_count
+            logger.info("Dependency extraction complete: %d patterns", dep_count)
+        except Exception:
+            logger.warning("Dependency extraction failed — ingestion still succeeded")
+
+    # Free large in-memory structures before calling the LLM (which
+    # causes Ollama to load the model into RAM).
+    del file_contents_for_deps
+    del all_chunks
+    gc.collect()
 
     # ── 7. Generate codebase summary ─────────────────────────────
-    try:
-        await _generate_codebase_summary(session, repo_id=repo_id, repo_path=repo_path)
-    except Exception:
-        logger.warning("Codebase summary generation failed — queries will still work")
+    if settings.DISABLE_CODEBASE_SUMMARY:
+        logger.info("Codebase summary disabled (DISABLE_CODEBASE_SUMMARY=true) — skipping")
+    else:
+        try:
+            await _generate_codebase_summary(session, repo_id=repo_id, repo_path=repo_path)
+        except Exception:
+            logger.warning("Codebase summary generation failed — queries will still work")
 
     return stats
 

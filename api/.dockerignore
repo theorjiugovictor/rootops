@@ -1,0 +1,66 @@
+# ─── API build context exclusions ─────────────────────────────────
+# Keep this file: it controls what's sent to the Docker daemon.
+# Excluding these reduces build context and prevents secrets/bloat
+# from being baked into the image.
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env.local
+
+# Secrets — never bake these into the image
+.env
+*.pem
+*.crt
+*.key
+*.p12
+*.pfx
+
+# Development tooling
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Tests (not needed at runtime)
+tests/
+
+# Scripts (not needed at runtime)
+scripts/
+
+# Git history — can be hundreds of MB
+.git/
+.gitignore
+.gitattributes
+
+# Docs and repo metadata
+README.md
+CONTRIBUTING.md
+LICENSE
+docs/
+Makefile
+
+# Alembic migrations (managed via entrypoint, not baked in)
+# Comment this out if you run alembic inside the container
+# alembic/

@@ -59,10 +59,13 @@ services:
       DEBUG: ${DEBUG:-false}
 
       # ── LLM Backend ──────────────────────────────────────────
-      # Options: ollama (default), openai, anthropic, bedrock
-      LLM_BACKEND: ${LLM_BACKEND:-ollama}
+      # Auto-detected by RAM tier: "ollama" on ≥8 GB, "openai" on <8 GB.
+      # Override via LLM_BACKEND in .env. On small VMs, set an API key:
+      #   OPENAI_API_KEY=sk-...  or  ANTHROPIC_API_KEY=sk-ant-...
+      # To force local Ollama on a small VM: FORCE_OLLAMA=true
+      LLM_BACKEND: ${LLM_BACKEND:-}
 
-      # Ollama (default — runs locally, no API key needed)
+      # Ollama (default on ≥8 GB — runs locally, no API key needed)
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3}
 
@@ -75,8 +78,11 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
 
       # AWS Bedrock (optional — requires AWS credentials)
-      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-}
-      BEDROCK_REGION: ${BEDROCK_REGION:-us-east-1}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-eu.anthropic.claude-sonnet-4-6}
+      BEDROCK_REGION: ${BEDROCK_REGION:-eu-west-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
 
       # ── Embeddings ───────────────────────────────────────────
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-jinaai/jina-embeddings-v2-base-code}
@@ -86,6 +92,16 @@ services:
       # ── GitHub (optional — for Auto-Heal PR creation) ────────
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_DEFAULT_REPO: ${GITHUB_DEFAULT_REPO:-}
+
+      # ── Embedding / ingestion performance ────────────────────
+      # Auto-tuned from detected system RAM (cgroup-aware in Docker).
+      # No configuration needed — the API picks safe values for your
+      # machine automatically.  Override in .env only if you want to
+      # force specific values, e.g.:
+      #   EMBED_BATCH_SIZE=8
+      #   EMBED_WORKERS=1
+      #   EMBED_MAX_SEQ_LENGTH=256
+      #   DISABLE_CODEBASE_SUMMARY=true
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:

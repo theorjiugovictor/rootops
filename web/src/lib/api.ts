@@ -1,20 +1,36 @@
 /**
  * RootOps — TypeScript API Client
  *
- * Mirrors every endpoint from ui/utils/api.py.
- * All functions return { ok: boolean, ... } — callers never catch.
+ * All functions return { ok: boolean, ... } — callers never need try/catch.
+ * Requests go through Next.js rewrites to the FastAPI backend (no CORS issues).
  *
- * Runs client-side (browser) — requests go through Next.js rewrites
- * to the FastAPI backend so there are no CORS issues.
+ * Security: GitHub tokens are NEVER sent from the browser. The PR Review
+ * endpoints proxy through the backend which holds the server-side GITHUB_TOKEN.
  */
 
-const TIMEOUT_FAST = 5_000;
-const TIMEOUT_QUERY = 120_000;
-const TIMEOUT_INGEST = 300_000;
-const TIMEOUT_HEAL = 120_000;
+const TIMEOUT_FAST     = 5_000;
+const TIMEOUT_QUERY    = 120_000;
+const TIMEOUT_INGEST   = 300_000;
+const TIMEOUT_HEAL     = 120_000;
 const TIMEOUT_PROFILES = 60_000;
 
 // ── Internal fetch wrapper ──────────────────────────────────────
+
+/** Turn raw error text (possibly JSON) into a human-readable string. */
+function parseErrorText(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw);
+    // FastAPI returns {"detail": "..."} or {"detail": [{msg: "..."}]}
+    if (parsed?.detail) {
+      if (typeof parsed.detail === "string") return parsed.detail;
+      if (Array.isArray(parsed.detail)) {
+        return parsed.detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join("; ");
+      }
+    }
+    if (parsed?.error && typeof parsed.error === "string") return parsed.error;
+  } catch { /* not JSON — return raw */ }
+  return raw;
+}
 
 async function api<T = Record<string, unknown>>(
   path: string,
@@ -28,16 +44,20 @@ async function api<T = Record<string, unknown>>(
     const res = await fetch(path, {
       ...init,
       signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...init.headers,
-      },
+      headers: { "Content-Type": "application/json", ...init.headers },
     });
     clearTimeout(timer);
 
     if (!res.ok) {
       const text = await res.text().catch(() => res.statusText);
-      return { ok: false, error: text } as T & { ok: false; error: string };
+      // Parse FastAPI JSON error responses into readable strings
+      const error = parseErrorText(text);
+      return { ok: false, error } as T & { ok: false; error: string };
+    }
+
+    // 204 No Content — nothing to parse
+    if (res.status === 204 || res.headers.get("content-length") === "0") {
+      return { ok: true } as T & { ok: true };
     }
 
     const data = await res.json();
@@ -53,7 +73,6 @@ async function api<T = Record<string, unknown>>(
 }
 
 // Variant for endpoints that return a bare JSON array (not an object).
-// `api()` spreads the response object, which silently breaks for arrays.
 async function apiList<T>(
   path: string,
   opts: RequestInit & { timeout?: number } = {},
@@ -66,10 +85,7 @@ async function apiList<T>(
     const res = await fetch(path, {
       ...init,
       signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...init.headers,
-      },
+      headers: { "Content-Type": "application/json", ...init.headers },
     });
     clearTimeout(timer);
 
@@ -95,6 +111,11 @@ async function apiList<T>(
 
 export async function getHealth() {
   return api("/health");
+}
+
+/** Deep health check — database, embedding model, LLM backend, GitHub token. */
+export async function getDetailedHealth() {
+  return api("/api/health/detailed", { timeout: 10_000 });
 }
 
 export async function getIngestStatus() {
@@ -143,7 +164,7 @@ export async function getLogStats() {
 }
 
 export async function getOtelReceiverStatus() {
-  return api("/api/ingest/logs/otel/status");
+  return api("/api/ingest/logs/otel-status");
 }
 
 
@@ -166,6 +187,7 @@ export interface QuerySource {
   language?: string;
   commit_sha?: string;
   cross_referenced?: boolean;
+  rerank_score?: number;
 }
 
 export interface LogMatch {
@@ -188,7 +210,7 @@ export interface QueryResult {
   error?: string;
 }
 
-export async function queryCosebase(payload: QueryPayload): Promise<QueryResult> {
+export async function queryCodebase(payload: QueryPayload): Promise<QueryResult> {
   return api<QueryResult>("/api/query", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -196,8 +218,16 @@ export async function queryCosebase(payload: QueryPayload): Promise<QueryResult>
   });
 }
 
+/** @deprecated Use queryCodebase (fixes typo) */
+export const queryCosebase = queryCodebase;
+
 /**
- * Streaming RAG query — yields tokens via SSE.
+ * Streaming RAG query — yields NDJSON events via SSE.
+ *
+ * Event types:
+ *   { type: "metadata", data: { sources, log_matches, metadata } }
+ *   { type: "token",    data: "<text chunk>" }
+ *   { type: "error",    data: "<message>" }
  */
 export async function* streamQuery(payload: QueryPayload) {
   const controller = new AbortController();
@@ -212,7 +242,10 @@ export async function* streamQuery(payload: QueryPayload) {
     });
 
     clearTimeout(timer);
-    if (!res.ok || !res.body) return;
+    if (!res.ok || !res.body) {
+      yield { type: "error", data: `HTTP ${res.status}: ${await res.text().catch(() => "")}` };
+      return;
+    }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -222,19 +255,33 @@ export async function* streamQuery(payload: QueryPayload) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+
+      // Flush complete newline-delimited JSON lines
       const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+      buffer = lines.pop() ?? "";
 
       for (const line of lines) {
-        if (!line.trim()) continue;
+        const trimmed = line.trim();
+        if (!trimmed) continue;
         try {
-          const msg = JSON.parse(line);
-          yield msg;
-        } catch { /* skip malformed */ }
+          yield JSON.parse(trimmed);
+        } catch {
+          // Skip malformed lines silently
+        }
       }
     }
-  } catch {
-    yield { type: "error", data: "Stream connection failed" };
+
+    // Flush remaining buffer
+    if (buffer.trim()) {
+      try { yield JSON.parse(buffer.trim()); } catch { /* ignore */ }
+    }
+  } catch (err: unknown) {
+    clearTimeout(timer);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      yield { type: "error", data: "Stream timed out" };
+    } else {
+      yield { type: "error", data: err instanceof Error ? err.message : "Stream connection failed" };
+    }
   }
 }
 
@@ -259,7 +306,12 @@ export async function getRepositories(): Promise<{ ok: boolean; repos: Repositor
   return { ok, repos: data };
 }
 
-export async function getDependencyGraph() {
+export async function getDependencyGraph(): Promise<{
+  ok: boolean;
+  nodes?: unknown[];
+  edges?: unknown[];
+  error?: string;
+}> {
   return api("/api/repos/graph");
 }
 
@@ -281,10 +333,16 @@ export async function runHeal(serviceName?: string) {
 export interface PendingFix {
   fix_id: string;
   error_message?: string;
+  error_service?: string;
   related_file?: string;
   diagnosis?: string;
   suggested_code?: string;
   similarity_score?: number;
+  confidence_score?: number;
+  blast_radius_level?: string;
+  requires_approval?: boolean;
+  auto_apply_eligible?: boolean;
+  rollback_plan?: string;
 }
 
 export async function getFixes(): Promise<{ ok: boolean; fixes: PendingFix[] }> {
@@ -344,4 +402,71 @@ export async function buildProfiles() {
     method: "POST",
     timeout: TIMEOUT_PROFILES,
   });
+}
+
+
+// ── PR Review (server-side GitHub proxy) ──────────────────────
+// NOTE: No client-side GitHub token — the backend uses GITHUB_TOKEN from .env.
+
+export interface GitHubPR {
+  number: number;
+  title: string;
+  body?: string;
+  draft?: boolean;
+  user?: { login: string; avatar_url?: string };
+  labels?: { name: string; color: string }[];
+  additions?: number;
+  deletions?: number;
+  changed_files?: number;
+  updated_at?: string;
+  created_at?: string;
+  html_url?: string;
+}
+
+export async function getPRReviewStatus() {
+  return api("/api/pr-review/status");
+}
+
+export async function getPRList(
+  owner: string,
+  repo: string,
+  token?: string,
+): Promise<{ ok: boolean; prs: GitHubPR[]; rate_remaining?: string; has_token?: boolean; error?: string }> {
+  const r = await api<{ prs: GitHubPR[]; rate_remaining?: string; has_token?: boolean }>(
+    `/api/pr-review/prs?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`,
+    {
+      timeout: 15_000,
+      headers: token ? { "X-GitHub-Token": token } : {},
+    },
+  );
+  if (!r.ok) return { ok: false, prs: [], error: r.error };
+  return { ok: true, prs: r.prs ?? [], rate_remaining: r.rate_remaining, has_token: r.has_token };
+}
+
+export async function getPRDiff(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  token?: string,
+): Promise<{ ok: boolean; files?: unknown[]; diff?: string; error?: string }> {
+  return api(
+    `/api/pr-review/diff?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&pr=${prNumber}`,
+    {
+      timeout: 15_000,
+      headers: token ? { "X-GitHub-Token": token } : {},
+    },
+  );
+}
+
+/** Format a UTC ISO timestamp as a human-readable relative age string. */
+export function formatAge(isoTimestamp: string): string {
+  try {
+    const s = Math.floor((Date.now() - new Date(isoTimestamp).getTime()) / 1000);
+    if (s < 60)    return "just now";
+    if (s < 3600)  return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+  } catch {
+    return "unknown";
+  }
 }

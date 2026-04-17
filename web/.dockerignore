@@ -1,0 +1,36 @@
+# ─── Web build context exclusions ─────────────────────────────────
+
+# Dependencies — reinstalled inside the container
+node_modules/
+.npm/
+.pnpm-store/
+
+# Next.js build output — rebuilt inside the container
+.next/
+out/
+
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Git history
+.git/
+.gitignore
+.gitattributes
+
+# Docs and repo metadata
+README.md
+CONTRIBUTING.md
+LICENSE
+
+# Test artifacts
+coverage/
+*.log

@@ -38,9 +38,26 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-_pool = ThreadPoolExecutor(max_workers=2)
+_pool = ThreadPoolExecutor(max_workers=settings.EMBED_WORKERS)
 
-# Per-process model caches — loaded once per worker process.
+# ── Concurrency rate-limit ────────────────────────────────────────
+# Cap how many embed_text / embed_batch calls can run concurrently.
+# This prevents a burst of queries from saturating the embedding thread
+# pool and causing OOM on constrained VMs.
+# Value: EMBED_WORKERS * 3 gives queuing room while preventing pile-up.
+_embed_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    """Return the shared embedding concurrency semaphore (lazy init)."""
+    global _embed_semaphore
+    if _embed_semaphore is None:
+        limit = max(settings.EMBED_WORKERS * 3, 6)
+        _embed_semaphore = asyncio.Semaphore(limit)
+        logger.debug("Embedding semaphore initialised: limit=%d", limit)
+    return _embed_semaphore
+
+# Per-thread model caches — loaded once per worker.
 _embed_cache: dict[str, SentenceTransformer] = {}
 _rerank_cache: dict[str, CrossEncoder] = {}
 
@@ -48,7 +65,24 @@ _rerank_cache: dict[str, CrossEncoder] = {}
 def _get_embed_model(model_name: str) -> SentenceTransformer:
     if model_name not in _embed_cache:
         logger.info("Loading embedding model: %s", model_name)
-        _embed_cache[model_name] = SentenceTransformer(model_name, trust_remote_code=True)
+        model = SentenceTransformer(model_name, trust_remote_code=True)
+
+        # Hard-cap the token sequence length sent to the transformer.
+        # The jina-v2 model supports 8192 tokens, but attention memory
+        # is O(n²) per sequence — a single 8k-token chunk can consume
+        # several GB.  Truncating to 512 tokens (≈2000 chars of code)
+        # keeps peak memory per sequence well under control while
+        # preserving enough semantic signal for retrieval.
+        max_seq = settings.EMBED_MAX_SEQ_LENGTH
+        if max_seq and max_seq > 0:
+            old_max = getattr(model, "max_seq_length", None)
+            model.max_seq_length = max_seq
+            logger.info(
+                "Capped model max_seq_length: %s → %d tokens",
+                old_max, max_seq,
+            )
+
+        _embed_cache[model_name] = model
     return _embed_cache[model_name]
 
 
@@ -81,33 +115,44 @@ def _do_embed_text(text: str, model_name: str) -> list[float]:
 
 def _do_embed_batch(texts: list[str], model_name: str, batch_size: int) -> list[list[float]]:
     model = _get_embed_model(model_name)
+    # Cap internal batch_size to limit peak tensor memory.
+    # The jina-v2 model with 8192-token context can use several GB when
+    # encoding many long sequences simultaneously (attention is O(n²)).
+    # Use the configurable EMBED_ENCODE_BATCH_SIZE (default 16) so
+    # resource-constrained VMs can lower it via env var.
+    safe_bs = min(batch_size, settings.EMBED_ENCODE_BATCH_SIZE)
     embeddings = model.encode(
         texts,
-        batch_size=batch_size,
+        batch_size=safe_bs,
         normalize_embeddings=True,
-        show_progress_bar=len(texts) > 100,
+        show_progress_bar=len(texts) > 50,
     )
     return [np.float16(e).tolist() for e in embeddings]
 
 
 async def embed_text(text: str, domain: str = "code") -> list[float]:
-    """Embed a single text string into a domain-specific dense vector."""
+    """Embed a single text string into a domain-specific dense vector.
+
+    Uses a semaphore to cap concurrent embedding calls and prevent
+    thread-pool saturation on memory-constrained VMs.
+    """
     model_name = _model_for_domain(domain)
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        _pool, _do_embed_text, text, model_name
-    )
+    async with _get_semaphore():
+        return await loop.run_in_executor(_pool, _do_embed_text, text, model_name)
 
 
 async def embed_batch(texts: list[str], batch_size: int = 32, domain: str = "code") -> list[list[float]]:
-    """Embed a list of texts into dense vectors using the domain-appropriate model."""
+    """Embed a list of texts into dense vectors using the domain-appropriate model.
+
+    Uses a semaphore to cap concurrent embedding calls.
+    """
     if not texts:
         return []
     model_name = _model_for_domain(domain)
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        _pool, _do_embed_batch, texts, model_name, batch_size
-    )
+    async with _get_semaphore():
+        return await loop.run_in_executor(_pool, _do_embed_batch, texts, model_name, batch_size)
 
 
 # ── Reranking ─────────────────────────────────────────────────────

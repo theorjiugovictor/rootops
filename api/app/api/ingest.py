@@ -6,10 +6,16 @@ Supports both local paths and remote URLs.
 
 Multi-repo: each ingestion creates/updates a Repository row and uses
 repo_id as the primary key for IngestionState (not a singleton).
+
+Architecture: POST /api/ingest returns 202 immediately and runs the
+ingestion in a background asyncio task.  This keeps the API container
+responsive and — critically — alive even if the ingest task OOMs or
+crashes. The client polls GET /api/ingest/status for progress.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from pathlib import Path
@@ -20,7 +26,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_db
+from app.db import async_session, get_db
 from app.models.code_chunk import CodeChunk
 from app.models.commit import Commit
 from app.models.ingestion_state import IngestionState
@@ -139,20 +145,76 @@ class IngestStatusResponse(BaseModel):
     error: str | None = None
 
 
+# ── Background ingestion task ─────────────────────────────────────
+
+async def _run_ingest_in_background(
+    *,
+    repo_path: str | None,
+    repo_url: str | None,
+    branch: str,
+    max_commits: int | None,
+    repo_name: str | None,
+    team: str | None,
+    tags: list | None,
+    description: str | None,
+    repo_id: uuid.UUID | None,
+) -> None:
+    """Execute ingestion in its own DB session, fully detached from the
+    original HTTP request.  Exceptions are caught and persisted as
+    'failed' state — they never propagate to the API event loop."""
+    try:
+        async with async_session() as session:
+            if repo_path:
+                stats = await ingest_repository(
+                    repo_path=repo_path,
+                    session=session,
+                    branch=branch,
+                    max_commits=max_commits,
+                    repo_name=repo_name,
+                    team=team,
+                    tags=tags,
+                    description=description,
+                )
+            else:
+                stats = await clone_and_ingest(
+                    repo_url=repo_url,
+                    session=session,
+                    branch=branch,
+                    max_commits=max_commits,
+                    repo_name=repo_name,
+                    team=team,
+                    tags=tags,
+                    description=description,
+                )
+            actual_repo_id = uuid.UUID(stats["repo_id"])
+            await _set_state(session, actual_repo_id, state="completed", stats=stats)
+            logger.info(
+                "Background ingest complete: %d commits, %d chunks from %d files",
+                stats.get("commits_ingested", 0),
+                stats.get("chunks_ingested", 0),
+                stats.get("files_processed", 0),
+            )
+    except Exception as exc:
+        logger.exception("Background ingestion failed")
+        try:
+            async with async_session() as session:
+                await _set_state(session, repo_id, state="failed", error=str(exc))
+        except Exception:
+            logger.exception("Could not persist failure state")
+
+
 # ── Endpoints ─────────────────────────────────────────────────────
 
-@router.post("", response_model=IngestResponse)
+@router.post("", response_model=IngestResponse, status_code=202)
 async def trigger_ingestion(
     request: IngestRequest,
     session: AsyncSession = Depends(get_db),
 ):
     """Trigger ingestion of a git repository.
 
-    Creates/updates a Repository row and tags all chunks and commits with
-    its repo_id. Re-ingesting the same repo name updates it in place.
+    Returns 202 immediately and runs ingestion in the background.
+    Poll GET /api/ingest/status for progress.
     """
-    # Use a transient UUID for state tracking before we know the real repo_id.
-    # After ingestion, stats will include the actual repo_id.
     if request.repo_path:
         repo_path = Path(request.repo_path)
         if not repo_path.exists():
@@ -160,85 +222,51 @@ async def trigger_ingestion(
         if not (repo_path / ".git").exists():
             raise HTTPException(400, f"Not a git repository: {request.repo_path}")
 
-        # Derive repo name early so we can look up existing state
         repo_name = request.name or repo_path.name
-        existing_repo = (
-            await session.execute(select(Repository).where(Repository.name == repo_name))
-        ).scalar_one_or_none()
-        repo_id = existing_repo.id if existing_repo else None
-
-        current = await _get_state(session, repo_id)
-        if current["state"] == "running":
-            raise HTTPException(409, "An ingestion is already in progress for this repository.")
-
-        await _set_state(
-            session, repo_id,
-            state="running", repo_path=request.repo_path, repo_url=None,
-            stats=None, error=None,
-        )
-
-        try:
-            stats = await ingest_repository(
-                repo_path=request.repo_path,
-                session=session,
-                branch=request.branch,
-                max_commits=request.max_commits,
-                repo_name=request.name,
-                team=request.team,
-                tags=request.tags,
-                description=request.description,
-            )
-            actual_repo_id = uuid.UUID(stats["repo_id"])
-            await _set_state(session, actual_repo_id, state="completed", stats=stats)
-        except Exception as e:
-            logger.exception("Ingestion failed")
-            await _set_state(session, repo_id, state="failed", error=str(e))
-            raise HTTPException(500, f"Ingestion failed: {e}")
-
     else:
         repo_name = request.name or request.repo_url.rstrip("/").split("/")[-1].removesuffix(".git")
-        existing_repo = (
-            await session.execute(select(Repository).where(Repository.name == repo_name))
-        ).scalar_one_or_none()
-        repo_id = existing_repo.id if existing_repo else None
 
-        current = await _get_state(session, repo_id)
-        if current["state"] == "running":
-            raise HTTPException(409, "An ingestion is already in progress for this repository.")
+    # Check for already-running ingestion
+    existing_repo = (
+        await session.execute(select(Repository).where(Repository.name == repo_name))
+    ).scalar_one_or_none()
+    repo_id = existing_repo.id if existing_repo else None
 
-        await _set_state(
-            session, repo_id,
-            state="running", repo_path=None, repo_url=request.repo_url,
-            stats=None, error=None,
+    current = await _get_state(session, repo_id)
+    if current["state"] == "running":
+        raise HTTPException(409, "An ingestion is already in progress for this repository.")
+
+    # Mark as running immediately so subsequent calls get a 409
+    await _set_state(
+        session, repo_id,
+        state="running",
+        repo_path=request.repo_path,
+        repo_url=request.repo_url,
+        stats=None, error=None,
+    )
+
+    # Fire off ingestion in a background asyncio task
+    asyncio.create_task(
+        _run_ingest_in_background(
+            repo_path=request.repo_path,
+            repo_url=request.repo_url,
+            branch=request.branch,
+            max_commits=request.max_commits,
+            repo_name=request.name,
+            team=request.team,
+            tags=request.tags,
+            description=request.description,
+            repo_id=repo_id,
         )
-
-        try:
-            stats = await clone_and_ingest(
-                repo_url=request.repo_url,
-                session=session,
-                branch=request.branch,
-                max_commits=request.max_commits,
-                repo_name=request.name,
-                team=request.team,
-                tags=request.tags,
-                description=request.description,
-            )
-            actual_repo_id = uuid.UUID(stats["repo_id"])
-            await _set_state(session, actual_repo_id, state="completed", stats=stats)
-        except Exception as e:
-            logger.exception("Ingestion from URL failed")
-            await _set_state(session, repo_id, state="failed", error=str(e))
-            raise HTTPException(500, f"Ingestion from URL failed: {e}")
+    )
 
     return IngestResponse(
-        status="completed",
-        repo_id=stats.get("repo_id"),
-        repo_name=stats.get("repo_name"),
+        status="accepted",
+        repo_id=str(repo_id) if repo_id else None,
+        repo_name=repo_name,
         message=(
-            f"Successfully ingested {stats['commits_ingested']} commits "
-            f"and {stats['chunks_ingested']} code chunks "
-            f"from {stats['files_processed']} files. "
-            f"{stats.get('dependencies_found', 0)} dependency patterns found."
+            f"Ingestion of '{repo_name}' started in the background. "
+            "Poll GET /api/ingest/status for progress."
         ),
     )
 

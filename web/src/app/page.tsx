@@ -9,11 +9,22 @@ import {
   getLogStats,
   getRepositories,
   getDependencyGraph,
-  queryCosebase,
+  queryCodebase,
   type Repository,
   type QuerySource,
 } from "@/lib/api";
-import { Search, Database, GitCommit, Layers, FileCode, ScrollText, Activity } from "lucide-react";
+import {
+  Search,
+  Database,
+  GitCommit,
+  Layers,
+  FileCode,
+  ScrollText,
+  Activity,
+  ArrowRight,
+  GitBranch,
+  Network,
+} from "lucide-react";
 
 const STATE_LABELS: Record<string, string> = {
   idle:      "Ready",
@@ -33,19 +44,21 @@ const CHIPS = [
   "Cross-service calls",
 ];
 
+interface GraphNode { id: string; name: string; team?: string; chunk_count: number; commit_count: number }
+interface GraphEdge { id: string; source: string; target: string; source_name: string; target_name: string; dependency_type: string; confidence: number }
+
 export default function DashboardPage() {
-  const [health, setHealth]       = useState<Record<string, unknown>>({});
-  const [stats, setStats]         = useState<Record<string, number>>({});
-  const [state, setState]         = useState("unknown");
-  const [repos, setRepos]         = useState<Repository[]>([]);
-  const [logStats, setLogStats]   = useState<Record<string, unknown>>({});
-  const [question, setQuestion]   = useState("");
-  const [useLlm, setUseLlm]       = useState(true);
-  const [searching, setSearching] = useState(false);
-  const [result, setResult]       = useState<{
-    answer?: string;
-    sources?: QuerySource[];
-  } | null>(null);
+  const [health, setHealth]         = useState<Record<string, unknown>>({});
+  const [stats, setStats]           = useState<Record<string, number>>({});
+  const [state, setState]           = useState("unknown");
+  const [repos, setRepos]           = useState<Repository[]>([]);
+  const [logStats, setLogStats]     = useState<Record<string, unknown>>({});
+  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
+  const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
+  const [question, setQuestion]     = useState("");
+  const [useLlm, setUseLlm]         = useState(true);
+  const [searching, setSearching]   = useState(false);
+  const [result, setResult]         = useState<{ answer?: string; sources?: QuerySource[] } | null>(null);
 
   useEffect(() => {
     getHealth().then(setHealth).catch(() => {});
@@ -55,19 +68,25 @@ export default function DashboardPage() {
     }).catch(() => {});
     getLogStats().then(setLogStats).catch(() => {});
     getRepositories().then((r) => setRepos(r.repos)).catch(() => {});
-    getDependencyGraph().catch(() => {});
+    getDependencyGraph().then((g) => {
+      if (g.ok) {
+        setGraphNodes((g.nodes as GraphNode[]) ?? []);
+        setGraphEdges((g.edges as GraphEdge[]) ?? []);
+      }
+    }).catch(() => {});
   }, []);
 
   async function handleSearch() {
     if (!question.trim()) return;
     setSearching(true);
-    const r = await queryCosebase({ question: question.trim(), top_k: 5, use_llm: useLlm });
+    const r = await queryCodebase({ question: question.trim(), top_k: 5, use_llm: useLlm });
     setResult(r);
     setSearching(false);
   }
 
   const repoCount  = repos.length;
   const stateLabel = STATE_LABELS[state] || state;
+  const isBlank    = repoCount === 0 && state !== "running";
 
   return (
     <>
@@ -88,7 +107,63 @@ export default function DashboardPage() {
         }
       />
 
-      {/* Metrics */}
+      {/* ── Onboarding wizard (shown only on fresh install) ─────── */}
+      {isBlank && (
+        <Card className="mb-8 border-accent/[0.18] bg-accent/[0.02]">
+          <div className="text-[15px] font-semibold text-text-bright mb-1">
+            Welcome to RootOps
+          </div>
+          <p className="text-[12.5px] text-text-dim mb-6 leading-relaxed">
+            Follow these three steps to start getting AI-powered insights from your codebase.
+          </p>
+          <div className="grid md:grid-cols-3 gap-4">
+            {[
+              {
+                step: "1",
+                title: "Connect a Repository",
+                desc: "Go to Settings and paste a GitHub URL or local path.",
+                href: "/settings",
+                cta: "Go to Settings →",
+              },
+              {
+                step: "2",
+                title: "Ingest & Embed",
+                desc: "RootOps chunks your code and builds a semantic vector index.",
+                href: "/settings",
+                cta: "Start Ingestion →",
+              },
+              {
+                step: "3",
+                title: "Ask Questions",
+                desc: "Query your codebase in natural language or stream AI answers.",
+                href: "/intelligence",
+                cta: "Open Intelligence →",
+              },
+            ].map(({ step, title, desc, href, cta }) => (
+              <div
+                key={step}
+                className="rounded-[12px] border border-white/[0.07] bg-white/[0.02] p-4 flex flex-col gap-3"
+              >
+                <div className="w-7 h-7 rounded-full bg-accent/[0.12] border border-accent/20 flex items-center justify-center text-[12px] font-bold text-accent">
+                  {step}
+                </div>
+                <div>
+                  <div className="text-[13px] font-semibold text-text-bright mb-1">{title}</div>
+                  <p className="text-[12px] text-text-dim leading-relaxed">{desc}</p>
+                </div>
+                <a
+                  href={href}
+                  className="mt-auto inline-flex items-center gap-1 text-[12px] font-semibold text-accent hover:text-accent/80 transition-colors"
+                >
+                  {cta} <ArrowRight size={12} />
+                </a>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* ── Metrics ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-10">
         <Metric label="Repositories" value={repoCount}
           icon={<Database size={12} />} />
@@ -109,8 +184,8 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Two-column layout */}
-      <div className="grid lg:grid-cols-2 gap-8">
+      {/* ── Two-column layout: repos + quick search ──────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
         {/* Left: Repos */}
         <div>
           {repos.length > 0 ? (
@@ -136,11 +211,11 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Right: Search */}
+        {/* Right: Quick Search */}
         <div>
           <SectionTitle>Quick Search</SectionTitle>
           <p className="text-[12px] text-text-dim mb-4">
-            Ask anything about your codebase — full conversations in{" "}
+            Ask anything about your codebase — full streaming conversations in{" "}
             <a href="/intelligence" className="text-accent/80 hover:text-accent transition-colors">
               Intelligence
             </a>
@@ -190,18 +265,91 @@ export default function DashboardPage() {
             <div className="mt-6 space-y-4 animate-fade-up">
               {result.answer && (
                 <Card className="border-accent/[0.15] bg-accent/[0.025]">
-                  <div className="text-[13px] text-text leading-relaxed whitespace-pre-wrap">
+                  <div className="text-[13px] text-text leading-relaxed whitespace-pre-wrap break-words">
                     {result.answer}
                   </div>
                 </Card>
               )}
               {result.sources && result.sources.length > 0 && (
-                <SimilarityBar sources={result.sources} title="Match Map" />
+                <SimilarityBar sources={result.sources} title="Source files" />
               )}
             </div>
           )}
         </div>
       </div>
+
+      {/* ── Dependency Graph ─────────────────────────────────────── */}
+      {graphNodes.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <SectionTitle>
+              <span className="inline-flex items-center gap-1.5">
+                <Network size={12} />
+                Service Dependency Graph · {graphNodes.length} node{graphNodes.length !== 1 ? "s" : ""}
+                {graphEdges.length > 0 && `, ${graphEdges.length} edge${graphEdges.length !== 1 ? "s" : ""}`}
+              </span>
+            </SectionTitle>
+          </div>
+
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {graphNodes.map((node) => {
+              const outbound = graphEdges.filter((e) => e.source === node.id);
+              const inbound  = graphEdges.filter((e) => e.target === node.id);
+
+              return (
+                <a
+                  key={node.id}
+                  href="/settings"
+                  className="block rounded-[14px] border border-white/[0.07] bg-[rgba(8,8,12,0.8)] p-4 hover:border-accent/30 hover:bg-accent/[0.02] transition-all duration-150 group"
+                >
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent/20 to-info/20 border border-white/[0.08] flex items-center justify-center shrink-0">
+                      <GitBranch size={13} className="text-accent/70" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-semibold text-text-bright group-hover:text-accent transition-colors truncate">
+                        {node.name}
+                      </div>
+                      {node.team && (
+                        <div className="text-[10.5px] text-text-dim mt-0.5">{node.team}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 text-[11px] text-text-dim mb-3">
+                    <span>{node.chunk_count.toLocaleString()} chunks</span>
+                    <span className="text-text-dim/30">·</span>
+                    <span>{node.commit_count.toLocaleString()} commits</span>
+                  </div>
+
+                  {(outbound.length > 0 || inbound.length > 0) && (
+                    <div className="space-y-1 pt-3 border-t border-white/[0.05]">
+                      {outbound.slice(0, 3).map((e) => (
+                        <div key={e.id} className="flex items-center gap-1.5 text-[11px]">
+                          <span className="text-accent/50">→</span>
+                          <span className="text-text-dim truncate">{e.target_name}</span>
+                          <span className="ml-auto text-text-dim/50 shrink-0">{e.dependency_type}</span>
+                        </div>
+                      ))}
+                      {inbound.slice(0, 2).map((e) => (
+                        <div key={e.id} className="flex items-center gap-1.5 text-[11px]">
+                          <span className="text-info/50">←</span>
+                          <span className="text-text-dim truncate">{e.source_name}</span>
+                        </div>
+                      ))}
+                      {(outbound.length + inbound.length) > 5 && (
+                        <div className="text-[10.5px] text-text-dim/50">
+                          +{outbound.length + inbound.length - 5} more
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -11,6 +12,8 @@ import {
   Users,
   Settings,
   Hexagon,
+  Menu,
+  X,
 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -40,13 +43,27 @@ const NAV_SECTIONS = [
 ] as const;
 
 export function Sidebar() {
+  return (
+    <>
+      {/* Mobile: top bar + drawer */}
+      <MobileNav />
+
+      {/* Desktop: fixed sidebar */}
+      <aside className="hidden lg:flex w-[216px] shrink-0 flex-col border-r border-white/[0.055] bg-[#05050A] relative overflow-hidden">
+        {/* Top ambient glow */}
+        <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-[rgba(0,217,245,0.04)] to-transparent pointer-events-none" />
+        <NavContent />
+      </aside>
+    </>
+  );
+}
+
+/* ── Shared nav content used by both desktop sidebar and mobile drawer ── */
+function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden lg:flex w-[216px] shrink-0 flex-col border-r border-white/[0.055] bg-[#05050A] relative overflow-hidden">
-      {/* Top ambient glow */}
-      <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-[rgba(0,217,245,0.04)] to-transparent pointer-events-none" />
-
+    <>
       {/* Brand */}
       <div className="relative px-5 pt-6 pb-5">
         <div className="flex items-center gap-3">
@@ -81,6 +98,7 @@ export function Sidebar() {
                   <Link
                     key={href}
                     href={href}
+                    onClick={onNavigate}
                     className={clsx(
                       "relative flex items-center gap-2.5 px-3 py-[7px] rounded-lg text-[12.5px] font-medium transition-all duration-150",
                       active
@@ -113,6 +131,75 @@ export function Sidebar() {
           {process.env.NEXT_PUBLIC_API_URL || "localhost:8000"}
         </div>
       </div>
-    </aside>
+    </>
+  );
+}
+
+/* ── Mobile top bar + slide-out drawer ─────────────────────────── */
+function MobileNav() {
+  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Close drawer on route change
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  // Prevent body scroll when drawer is open
+  useEffect(() => {
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [open]);
+
+  return (
+    <>
+      {/* Top bar — visible only on mobile */}
+      <header className="lg:hidden sticky top-0 z-40 flex items-center justify-between px-4 h-14 border-b border-white/[0.055] bg-[#05050A]/95 backdrop-blur-md">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-[8px] bg-gradient-to-br from-[#00C8E8] to-[#1B44C8] flex items-center justify-center shadow-[0_0_10px_rgba(0,200,232,0.3)]">
+            <Hexagon size={12} className="text-white" fill="rgba(255,255,255,0.15)" strokeWidth={2.5} />
+          </div>
+          <span className="text-[13px] font-bold tracking-tight text-text-bright">
+            RootOps
+          </span>
+        </div>
+        <button
+          onClick={() => setOpen(!open)}
+          className="p-2 -mr-2 rounded-lg text-text-dim hover:text-text-bright hover:bg-white/[0.05] transition-colors"
+          aria-label={open ? "Close menu" : "Open menu"}
+        >
+          {open ? <X size={20} /> : <Menu size={20} />}
+        </button>
+      </header>
+
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+          onClick={() => setOpen(false)}
+        />
+      )}
+
+      {/* Slide-out drawer */}
+      <aside
+        className={clsx(
+          "lg:hidden fixed top-0 left-0 z-50 h-full w-[260px] flex flex-col bg-[#05050A] border-r border-white/[0.055] transition-transform duration-200 ease-out",
+          open ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        {/* Close button inside drawer */}
+        <div className="absolute top-4 right-3">
+          <button
+            onClick={() => setOpen(false)}
+            className="p-1.5 rounded-lg text-text-dim hover:text-text-bright hover:bg-white/[0.05] transition-colors"
+            aria-label="Close menu"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <NavContent onNavigate={() => setOpen(false)} />
+      </aside>
+    </>
   );
 }

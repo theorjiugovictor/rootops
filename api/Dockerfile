@@ -1,26 +1,62 @@
-# ─── RootOps API ─────────────────────────────────────────────────
-FROM python:3.11-slim
+# ─── RootOps API — Multi-stage build ──────────────────────────────
+#
+# Stage 1 (builder): compiles C extensions (asyncpg, cryptography)
+#                    which need gcc and libpq-dev.
+# Stage 2 (runtime): copies only the installed packages — no build
+#                    tools, no compiler, no headers in the final image.
+#
+# This saves ~150 MB compared to a single-stage build.
+
+# ── Stage 1: build ────────────────────────────────────────────────
+FROM python:3.11-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_SYSTEM_PYTHON=1
 
-WORKDIR /app
-
-# System deps for asyncpg, gitpython, and sentence-transformers
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc libpq-dev git curl && \
+# Build-time system deps: gcc for asyncpg/cryptography, libpq-dev for
+# psycopg2/asyncpg headers. These stay in the builder, not the final image.
+RUN echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80-retries && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends gcc libpq-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies securely via uv
+WORKDIR /app
+
+# Install uv and sync dependencies.
+# Copy lockfiles first to maximise Docker layer caching —
+# this layer is only invalidated when dependencies actually change.
 COPY pyproject.toml uv.lock ./
 RUN pip install --no-cache-dir uv && \
-    uv sync --frozen --no-cache --no-install-project
+    uv sync --frozen --no-cache --no-install-project && \
+    cp -r .venv/lib/python3.11/site-packages/* /usr/local/lib/python3.11/site-packages/ && \
+    cp .venv/bin/uvicorn /usr/local/bin/uvicorn 2>/dev/null || true
 
-# Copy application code
+# ── Stage 2: runtime ──────────────────────────────────────────────
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_SYSTEM_PYTHON=1
+
+# Runtime-only system deps:
+#   libpq5  — asyncpg shared library (no headers needed at runtime)
+#   git     — gitpython clones repos at runtime
+#   curl    — healthcheck probe
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libpq5 git curl && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy compiled Python packages from builder's venv (no gcc/headers included).
+COPY --from=builder /app/.venv/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+
+# Copy application source (respects .dockerignore — excludes .git,
+# tests/, scripts/, __pycache__, etc.)
 COPY . .
 
-# Non-root user with writable cache dir
+# Non-root user with writable cache dir for HuggingFace models
 RUN groupadd -r rootops && useradd -r -g rootops -m rootops \
     && mkdir -p /home/rootops/.cache \
     && chown -R rootops:rootops /app /home/rootops
@@ -31,4 +67,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl --fail http://localhost:8000/health || exit 1
 
-CMD ["uv", "run", "--no-project", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

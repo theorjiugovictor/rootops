@@ -70,6 +70,31 @@ async def generate(
         The synthesized response string.
     """
     backend = settings.LLM_BACKEND.lower()
+
+    # ── Guard: skip LLM when no usable backend is configured ─────
+    if not settings.LLM_AVAILABLE:
+        n_code = sum(1 for c in context_chunks if c.get("language") not in ("log", "log_concept", "graph"))
+        n_log = len(context_chunks) - n_code
+        backend = settings.LLM_BACKEND.lower()
+        if backend in ("openai", "anthropic"):
+            key_hint = f"Set `{backend.upper()}_API_KEY` in your environment."
+        else:
+            key_hint = (
+                "Set `LLM_BACKEND=openai` + `OPENAI_API_KEY=sk-…`, or\n"
+                "Set `LLM_BACKEND=anthropic` + `ANTHROPIC_API_KEY=…`, or\n"
+                "Set `LLM_BACKEND=bedrock` (uses AWS IAM credentials)."
+            )
+        return (
+            f"🔍 **Vector search returned {n_code} code chunk(s) and "
+            f"{n_log} log match(es)** (see sources below).\n\n"
+            f"💡 LLM synthesis is **not available** — no API key configured "
+            f"for `{backend}`.\n\n"
+            f"**To enable AI answers:**\n"
+            f"- {key_hint}\n"
+            f"- Or set `FORCE_OLLAMA=true` + `LLM_BACKEND=ollama` "
+            f"(very slow on ≤8 GB RAM)\n"
+        )
+
     system_prompt = build_system_prompt(codebase_summary)
 
     # Build the RAG prompt (shared across backends)
@@ -128,8 +153,22 @@ async def generate(
         )
 
 
-def format_context(chunks: list[dict]) -> str:
-    """Format retrieved chunks into a readable context block."""
+def format_context(chunks: list[dict], max_content_chars: int = 800) -> str:
+    """Format retrieved chunks into a readable context block.
+
+    Args:
+        chunks: Retrieved code/log chunks.
+        max_content_chars: Truncate each chunk's content to this many chars.
+            Keeps the LLM prompt small for faster inference on CPU.
+    """
+    from app.config import DETECTED_RAM_GB
+
+    # On small VMs, aggressively truncate to keep prompt under ~500 tokens
+    if DETECTED_RAM_GB <= 8:
+        max_content_chars = min(max_content_chars, 400)
+    elif DETECTED_RAM_GB <= 16:
+        max_content_chars = min(max_content_chars, 800)
+
     if not chunks:
         return "_No relevant code context found._"
 
@@ -140,7 +179,7 @@ def format_context(chunks: list[dict]) -> str:
         file_path = chunk.get("file_path", "unknown")
         start = chunk.get("start_line", "?")
         end = chunk.get("end_line", "?")
-        content = chunk.get("content", "")
+        content = chunk.get("content", "")[:max_content_chars]
         language = chunk.get("language", "") or ""
 
         score_label = (
@@ -165,6 +204,18 @@ async def generate_stream(
     codebase_summary: str | None = None,
 ):
     backend = settings.LLM_BACKEND.lower()
+
+    # ── Guard: skip LLM when no usable backend ──────────────────
+    if not settings.LLM_AVAILABLE:
+        n = len(context_chunks)
+        backend = settings.LLM_BACKEND.lower()
+        yield (
+            f"🔍 Found {n} result(s) via vector search (see sources).\n\n"
+            f"💡 LLM synthesis is not available — no API key for `{backend}`. "
+            f"Set `{backend.upper()}_API_KEY` or switch `LLM_BACKEND`."
+        )
+        return
+
     system_prompt = build_system_prompt(codebase_summary)
 
     context_text = format_context(context_chunks)
