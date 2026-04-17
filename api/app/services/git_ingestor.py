@@ -22,7 +22,6 @@ from pathlib import Path
 
 from git import Repo as GitRepo
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.code_chunk import CodeChunk

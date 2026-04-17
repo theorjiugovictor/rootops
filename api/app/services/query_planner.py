@@ -111,8 +111,6 @@ def classify_query(question: str) -> QueryType:
     Score the question against signal patterns and return the winning QueryType.
     Falls back to GENERAL when signals are ambiguous.
     """
-    scores: dict[QueryType, int] = {t: 0 for t in QueryType}
-
     matches = {
         QueryType.DIAGNOSTIC: len(_DIAGNOSTIC_SIGNALS.findall(question)),
         QueryType.EXPLORATORY: len(_EXPLORATORY_SIGNALS.findall(question)),

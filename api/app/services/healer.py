@@ -216,11 +216,6 @@ async def diagnose(session: AsyncSession, service_name: str | None = None) -> li
             continue
 
         # ── 3. Build diagnosis context ─────────────────────────────
-        code_context = "\n\n".join(
-            f"### {row.file_path} (lines {row.start_line}-{row.end_line})\n"
-            f"```{row.language or ''}\n{row.chunk_content}\n```"
-            for row in related_code
-        )
         error_context = (
             f"**Error Log:**\n"
             f"- Service: {log_entry.service_name}\n"

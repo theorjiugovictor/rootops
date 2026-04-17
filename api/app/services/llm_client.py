@@ -7,6 +7,7 @@ Used for local development and air-gapped deployments.
 
 from __future__ import annotations
 
+import json
 import logging
 
 import httpx
@@ -84,8 +85,6 @@ async def generate_ollama(
         logger.error("Unexpected LLM error (%s): %s", type(e).__name__, e)
         return f"⚠️ Unexpected error communicating with Ollama: {type(e).__name__}: {e}"
 
-
-import json
 
 async def generate_ollama_stream(
     prompt: str,

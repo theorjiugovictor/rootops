@@ -9,7 +9,7 @@ to a sliding-window approach for unrecognised formats.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 # ── Language patterns for boundary detection ─────────────────────

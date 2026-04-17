@@ -35,10 +35,8 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -226,7 +224,6 @@ async def _evaluate_promotion(session: AsyncSession, edge: GraphEdge) -> None:
         # Granger causality test using count-series approximation
         p_value: float | None = None
         if len(samples) >= 10:
-            import numpy as np
             # Build two simple time series from the lag samples as proxy
             series_a = [1.0] * len(samples)
             series_b = [1.0 / max(s, 1) for s in samples]  # inverse lag as proxy

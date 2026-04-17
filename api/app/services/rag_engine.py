@@ -35,9 +35,7 @@ from app.config import get_settings
 from app.services.embedding import embed_text, rerank
 from app.services.llm_backend import generate, generate_stream
 from app.services.query_planner import (
-    QueryType,
     RetrievalPlan,
-    classify_query,
     plan_retrieval,
     plan_to_metadata,
 )

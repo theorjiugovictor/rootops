@@ -26,7 +26,6 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -220,7 +219,7 @@ async def _llm_cluster_batch(messages: list[str]) -> list[str]:
 
     try:
         response = await generate(prompt, [])
-        lines = [l.strip() for l in response.strip().splitlines() if l.strip()]
+        lines = [line.strip() for line in response.strip().splitlines() if line.strip()]
         # Parse numbered lines: "1. Template text"
         templates = []
         for line in lines:

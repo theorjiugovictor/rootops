@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from github import Github, GithubException, InputGitTreeElement
+from github import Github, GithubException
 
 from app.config import get_settings
 

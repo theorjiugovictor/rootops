@@ -14,11 +14,10 @@ Each LogConcept represents a recurring log pattern (template) with:
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 
 from pgvector.sqlalchemy import HALFVEC
-from sqlalchemy import DateTime, Float, Integer, String, Text
+from sqlalchemy import DateTime, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 

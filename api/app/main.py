@@ -20,7 +20,7 @@ from app.api.profiles import router as profiles_router
 from app.api.query import router as query_router
 from app.api.repos import router as repos_router
 from app.config import get_settings
-from app.db import async_session, get_db, init_db
+from app.db import async_session, init_db
 from app.services.git_ingestor import ingest_repository
 
 logging.basicConfig(level=logging.INFO)
@@ -229,7 +229,7 @@ async def otlp_logs_receiver(
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     try:
-        result = await ingest_otel_logs(session, payload)
+        await ingest_otel_logs(session, payload)
         # OTLP spec: return empty JSON object on success
         return {}
     except Exception as e:
