@@ -228,15 +228,25 @@ class TestConfigRamTier:
         from unittest.mock import patch
         import importlib
         import app.config as cfg
-        with patch.object(cfg, "_detect_available_ram_gb", return_value=32.0):
+        # Patch the function so reload() picks up the mocked return value
+        original = cfg._detect_available_ram_gb
+        cfg._detect_available_ram_gb = lambda: 32.0
+        try:
             importlib.reload(cfg)
             assert cfg._T["llm"] == "ollama"
+        finally:
+            cfg._detect_available_ram_gb = original
+            importlib.reload(cfg)
 
     def test_small_ram_uses_openai(self):
         """≤8 GB should default to openai (Ollama is too slow)."""
-        from unittest.mock import patch
         import importlib
         import app.config as cfg
-        with patch.object(cfg, "_detect_available_ram_gb", return_value=4.0):
+        original = cfg._detect_available_ram_gb
+        cfg._detect_available_ram_gb = lambda: 4.0
+        try:
             importlib.reload(cfg)
             assert cfg._T["llm"] == "openai"
+        finally:
+            cfg._detect_available_ram_gb = original
+            importlib.reload(cfg)
