@@ -26,9 +26,9 @@ WORKDIR /app
 # Install uv and sync dependencies.
 # Copy lockfiles first to maximise Docker layer caching —
 # this layer is only invalidated when dependencies actually change.
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml ./
 RUN pip install --no-cache-dir uv && \
-    uv sync --frozen --no-cache --no-install-project && \
+    uv sync --no-cache --no-install-project && \
     cp -r .venv/lib/python3.11/site-packages/* /usr/local/lib/python3.11/site-packages/ && \
     cp .venv/bin/uvicorn /usr/local/bin/uvicorn 2>/dev/null || true
 

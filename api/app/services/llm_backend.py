@@ -145,11 +145,16 @@ async def generate(
             temperature=temperature,
         )
 
+    elif backend == "gemini":
+        logger.info("Using Gemini backend (model: %s)", settings.GEMINI_MODEL)
+        from app.services.gemini_client import generate_gemini
+        return await generate_gemini(**kwargs)
+
     else:
         logger.error("Unknown LLM backend: %s", backend)
         raise ValueError(
             f"Unknown LLM backend: '{backend}'. "
-            f"Set LLM_BACKEND to 'ollama', 'openai', 'anthropic', or 'bedrock'."
+            f"Set LLM_BACKEND to 'ollama', 'openai', 'anthropic', 'bedrock', or 'gemini'."
         )
 
 
@@ -263,5 +268,11 @@ async def generate_stream(
             temperature=temperature,
         )
         yield result
+
+    elif backend == "gemini":
+        from app.services.gemini_client import generate_gemini_stream
+        async for chunk in generate_gemini_stream(**kwargs):
+            yield chunk
+
     else:
         raise ValueError(f"Unknown LLM backend: {backend}")

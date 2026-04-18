@@ -135,7 +135,7 @@ class Settings(BaseSettings):
     CONVERSATION_HISTORY_TURNS: int = 5
 
     # ── LLM Backend ─────────────────────────────────────────────
-    # Options: "ollama", "openai", "anthropic", "bedrock"
+    # Options: "ollama", "openai", "anthropic", "bedrock", "gemini"
     # On ≤8 GB RAM, defaults to "openai" (Ollama CPU is too slow).
     # On ≥8 GB, defaults to "ollama" (free, local).
     # Always overridable via env var LLM_BACKEND.
@@ -159,6 +159,10 @@ class Settings(BaseSettings):
     AWS_REGION: str = "eu-west-1"
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
+
+    # ── Google Gemini ────────────────────────────────────────────
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
 
     # ── OpenTelemetry Log Receiver (OTLP/HTTP) ─────────────────
     OTEL_LOGS_RECEIVER_ENABLED: bool = True
@@ -261,6 +265,8 @@ class Settings(BaseSettings):
             return bool(self.ANTHROPIC_API_KEY)
         if backend == "bedrock":
             return True  # uses IAM credentials, not an env-var key
+        if backend == "gemini":
+            return bool(self.GEMINI_API_KEY)
         return False
 
     # ── Embedding versioning (blue/green index) ──────────────────
