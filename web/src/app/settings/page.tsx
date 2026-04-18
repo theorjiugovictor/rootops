@@ -26,7 +26,7 @@ const INPUT_CLS =
 
 interface DetailedHealth {
   ok: boolean;
-  checks?: Record<string, { ok: boolean; detail?: string; [key: string]: unknown }>;
+  checks?: Record<string, { ok: boolean; status?: string; model?: string; backend?: string; region?: string; dimension?: number; note?: string; fix?: string; [key: string]: unknown }>;
   error?: string;
 }
 
@@ -158,11 +158,23 @@ export default function SettingsPage() {
             {detailedHealth.checks &&
               Object.entries(detailedHealth.checks).map(([key, check]) => {
                 const label =
-                  key === "database"        ? "Database"
-                  : key === "embedding"     ? "Embedding"
-                  : key === "llm"           ? "LLM Backend"
-                  : key === "github_token"  ? "GitHub Token"
+                  key === "database"          ? "Database"
+                  : key === "embedding_model" ? "Embedding"
+                  : key === "llm"             ? "LLM Backend"
+                  : key === "github"          ? "GitHub Token"
                   : key;
+
+                // Build a human-readable detail from the check fields
+                const details: string[] = [];
+                if (check.status) details.push(String(check.status).replace(/_/g, " "));
+                if (check.model)  details.push(`Model: ${check.model}`);
+                if (check.backend) details.push(`Backend: ${check.backend}`);
+                if (check.region) details.push(`Region: ${check.region}`);
+                if (check.dimension) details.push(`Dim: ${check.dimension}`);
+                if (check.note)   details.push(String(check.note));
+                if (check.fix)    details.push(`Fix: ${check.fix}`);
+                const detail = details.join(" · ");
+
                 return (
                   <div
                     key={key}
@@ -179,8 +191,8 @@ export default function SettingsPage() {
                       }
                       <span className="text-[12.5px] font-semibold text-text-bright">{label}</span>
                     </div>
-                    {check.detail && (
-                      <p className="text-[11px] text-text-dim leading-relaxed">{check.detail}</p>
+                    {detail && (
+                      <p className="text-[11px] text-text-dim leading-relaxed">{detail}</p>
                     )}
                   </div>
                 );

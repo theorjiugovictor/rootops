@@ -334,6 +334,20 @@ async def health_detailed(session=Depends(_get_db)):
             "model": settings.BEDROCK_MODEL_ID,
             "region": settings.BEDROCK_REGION,
         }
+    elif backend == "gemini":
+        key_present = bool(settings.GEMINI_API_KEY)
+        checks["llm"] = {
+            "ok": key_present,
+            "backend": "gemini",
+            "status": "api_key_configured" if key_present else "missing_api_key",
+            "model": settings.GEMINI_MODEL,
+            "fix": (
+                None if key_present
+                else "Set GEMINI_API_KEY in your .env file"
+            ),
+        }
+        if not key_present:
+            all_ok = False
     else:
         checks["llm"] = {"ok": False, "backend": backend, "status": "unknown_backend"}
         all_ok = False

@@ -51,6 +51,13 @@ services:
       #   LLM_BACKEND: bedrock   (uses IAM, no key)
       # Or: FORCE_OLLAMA=true + LLM_BACKEND=ollama (slow, 3-5 min/query).
       # Embedding / ingestion auto-tuning needs no overrides.
+      LLM_BACKEND: ${LLM_BACKEND:-bedrock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      BEDROCK_REGION: ${BEDROCK_REGION:-eu-west-1}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-eu.anthropic.claude-sonnet-4-6}
 
   # ── Ollama: keep model loaded, use less memory ───────────────
   ollama:
