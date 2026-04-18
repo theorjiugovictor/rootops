@@ -226,17 +226,17 @@ class TestConfigRamTier:
     def test_large_ram_uses_ollama(self):
         """≥16 GB should default to Ollama."""
         from unittest.mock import patch
-        with patch("app.config._detect_available_ram_gb", return_value=32.0):
-            import importlib
-            import app.config as cfg
+        import importlib
+        import app.config as cfg
+        with patch.object(cfg, "_detect_available_ram_gb", return_value=32.0):
             importlib.reload(cfg)
             assert cfg._T["llm"] == "ollama"
 
     def test_small_ram_uses_openai(self):
         """≤8 GB should default to openai (Ollama is too slow)."""
         from unittest.mock import patch
-        with patch("app.config._detect_available_ram_gb", return_value=4.0):
-            import importlib
-            import app.config as cfg
+        import importlib
+        import app.config as cfg
+        with patch.object(cfg, "_detect_available_ram_gb", return_value=4.0):
             importlib.reload(cfg)
             assert cfg._T["llm"] == "openai"
