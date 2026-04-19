@@ -25,6 +25,7 @@ import {
   GitBranch,
   Network,
 } from "lucide-react";
+import { Markdown } from "@/components/markdown";
 
 const STATE_LABELS: Record<string, string> = {
   idle:      "Ready",
@@ -265,8 +266,8 @@ export default function DashboardPage() {
             <div className="mt-6 space-y-4 animate-fade-up">
               {result.answer && (
                 <Card className="border-accent/[0.15] bg-accent/[0.025]">
-                  <div className="text-[13px] text-text leading-relaxed whitespace-pre-wrap break-words">
-                    {result.answer}
+                  <div className="text-[13px] text-text leading-relaxed break-words">
+                    <Markdown content={result.answer} />
                   </div>
                 </Card>
               )}

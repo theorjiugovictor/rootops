@@ -309,3 +309,40 @@ async def get_ingestion_status(
         stats=merged_stats,
         error=current.get("error"),
     )
+
+
+@router.post("/reset")
+async def reset_ingestion_state(
+    session: AsyncSession = Depends(get_db),
+):
+    """Reset stale ingestion states so the dashboard no longer shows 'failed'.
+
+    Marks any 'failed' or 'running' ingestion states as 'completed' if
+    the repository already has chunks ingested, or deletes them otherwise.
+    """
+    stale = (
+        await session.execute(
+            select(IngestionState).where(
+                IngestionState.state.in_(["failed", "running"])
+            )
+        )
+    ).scalars().all()
+
+    reset_count = 0
+    for st in stale:
+        chunk_count = (
+            await session.execute(
+                select(func.count(CodeChunk.id)).where(
+                    CodeChunk.repo_id == st.repo_id
+                )
+            )
+        ).scalar() or 0
+        if chunk_count > 0:
+            st.state = "completed"
+            st.error = None
+        else:
+            await session.delete(st)
+        reset_count += 1
+
+    await session.commit()
+    return {"reset": reset_count, "message": f"Reset {reset_count} stale ingestion state(s)."}

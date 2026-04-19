@@ -67,6 +67,7 @@ async def lifespan(application: FastAPI):  # noqa: ARG001
         from app.models.ingestion_state import IngestionState
 
         async with async_session() as session:
+            # Reset 'running' states to 'failed'
             result = await session.execute(
                 update(IngestionState)
                 .where(IngestionState.state == "running")
@@ -76,11 +77,23 @@ async def lifespan(application: FastAPI):  # noqa: ARG001
                 )
             )
             if result.rowcount:
-                await session.commit()
                 logger.warning(
                     "Reset %d orphaned ingestion state(s) from 'running' → 'failed'",
                     result.rowcount,
                 )
+            # Reset stale 'failed' states back to 'idle' so the UI doesn't
+            # permanently show a failure badge from a previous run.
+            result2 = await session.execute(
+                update(IngestionState)
+                .where(IngestionState.state == "failed")
+                .values(state="idle", error=None)
+            )
+            if result2.rowcount:
+                logger.info(
+                    "Cleared %d stale 'failed' ingestion state(s) → 'idle'",
+                    result2.rowcount,
+                )
+            await session.commit()
     except Exception:
         logger.warning("Could not reset orphaned ingestion states", exc_info=True)
 
@@ -353,9 +366,10 @@ async def health_detailed(session=Depends(_get_db)):
         all_ok = False
 
     # ── 4. GitHub token (optional) ───────────────────────────────
+    gh_configured = bool(settings.GITHUB_TOKEN)
     checks["github"] = {
-        "ok": True,   # optional — not a hard failure
-        "status": "configured" if settings.GITHUB_TOKEN else "not_configured",
+        "ok": gh_configured,
+        "status": "configured" if gh_configured else "not_configured",
         "note": (
             "Token set — PR Review and Auto-Heal PR creation are available."
             if settings.GITHUB_TOKEN
