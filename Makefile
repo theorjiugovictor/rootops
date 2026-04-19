@@ -109,7 +109,7 @@ define _require_host
 	fi
 endef
 
-REPO_URL ?= $(shell grep -E '^REPO_URL=' .env 2>/dev/null | cut -d= -f2 || echo "https://github.com/theorjiugovictor/rootops-v3.git")
+REPO_URL ?= $(shell grep -E '^REPO_URL=' .env 2>/dev/null | cut -d= -f2 || echo "https://github.com/Intelligent-IDP/rootops.git")
 
 cloud-deploy: ## Bootstrap RootOps on a fresh remote host over SSH
 	$(_require_host)

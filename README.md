@@ -41,8 +41,8 @@ It does all of this entirely on your own infrastructure. Your code, your logs, a
 No source code required. Download the compose file and start:
 
 ```bash
-curl -O https://raw.githubusercontent.com/theorjiugovictor/rootops/main/docker-compose.yml
-curl -O https://raw.githubusercontent.com/theorjiugovictor/rootops/main/.env.example
+curl -O https://raw.githubusercontent.com/Intelligent-IDP/rootops/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/Intelligent-IDP/rootops/main/.env.example
 cp .env.example .env
 docker compose up -d
 ```
@@ -58,7 +58,7 @@ The default configuration uses **Ollama** with Llama 3, free, fully local, no AP
 If you have the repository cloned, `make up` handles everything — pulls latest images, starts services, and downloads the LLM model:
 
 ```bash
-git clone https://github.com/theorjiugovictor/rootops.git
+git clone https://github.com/Intelligent-IDP/rootops.git
 cd rootops
 make up
 ```

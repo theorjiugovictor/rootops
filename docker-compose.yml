@@ -47,7 +47,7 @@ services:
 
   # ── RootOps API ─────────────────────────────────────────────
   api:
-    image: ghcr.io/theorjiugovictor/rootops-api:latest
+    image: ghcr.io/intelligent-idp/rootops-api:latest
     container_name: rootops-api
     restart: unless-stopped
     depends_on:
@@ -111,7 +111,7 @@ services:
 
   # ── RootOps Web (Next.js) ────────────────────────────────────
   web:
-    image: ghcr.io/theorjiugovictor/rootops-web:latest
+    image: ghcr.io/intelligent-idp/rootops-web:latest
     container_name: rootops-web
     restart: unless-stopped
     depends_on:
