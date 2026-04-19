@@ -71,7 +71,7 @@ ZONE="${GCP_ZONE:-us-central1-a}"
 VM_NAME="${VM_NAME:-rootops}"
 MACHINE_TYPE="${GCP_MACHINE_TYPE:-e2-standard-4}"
 DISK_SIZE="${GCP_DISK_SIZE:-50}"
-REPO_URL="${REPO_URL:-https://github.com/theorjiugovictor/rootops-v3.git}"
+REPO_URL="${REPO_URL:-https://github.com/Intelligent-IDP/rootops.git}"
 DOMAIN="${DUCKDNS_SUBDOMAIN}.duckdns.org"
 
 # LLM config
