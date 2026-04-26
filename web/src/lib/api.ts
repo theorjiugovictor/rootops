@@ -164,7 +164,7 @@ export async function getLogStats() {
 }
 
 export async function getOtelReceiverStatus() {
-  return api("/api/ingest/logs/otel-status");
+  return api("/api/ingest/logs/otel/status");
 }
 
 
